@@ -1,18 +1,11 @@
 import { useState } from "react";
-import {
-  Cloud,
-  Download,
-  Upload,
-  RefreshCw,
-  ShieldCheck,
-  Smartphone,
-} from "lucide-react";
+import { Download, Upload, ShieldCheck, Smartphone } from "lucide-react";
 import type { Snapshot } from "../core/model";
 import { applyEdits, editObject } from "../core/db";
 import { exportBackup, restoreBackup, validateBackup } from "../core/backup";
-import { AsyncForm, Confirm, Modal } from "../components/Common";
+import { AsyncForm, Confirm } from "../components/Common";
 import type { SyncController } from "../sync/useSync";
-import { clientId } from "../sync/auth";
+import { CloudSettings } from "../components/CloudSettings";
 
 export function SettingsPage({
   snapshot,
@@ -27,7 +20,6 @@ export function SettingsPage({
     [restore, setRestore] = useState<{ text: string; count: number } | null>(
       null,
     ),
-    [unlink, setUnlink] = useState(false),
     [storage, setStorage] = useState("");
   const [baseline, setBaseline] = useState(snapshot.settings);
   return (
@@ -112,66 +104,7 @@ export function SettingsPage({
           </label>
         </AsyncForm>
       </section>
-      <section className="panel">
-        <div className="section-title">
-          <h2>
-            <Cloud size={23} /> OneDrive
-          </h2>
-          <span className="pill">{sync.status}</span>
-        </div>
-        <p>
-          Объединяйте карточки и прогресс на своих устройствах. После
-          подключения изменения отправляются автоматически, когда приложение
-          открыто и есть сеть.
-        </p>
-        {!clientId && (
-          <div className="notice">
-            <strong>Нужен Microsoft Entra client ID</strong>
-            <p>
-              Интеграция готова к настройке. Укажите{" "}
-              <code>VITE_MS_CLIENT_ID</code> и redirect URI при сборке, затем
-              опубликуйте приложение заново. Пошаговая инструкция находится в
-              README репозитория.
-            </p>
-          </div>
-        )}
-        <div className="actions">
-          <button
-            className="button primary"
-            disabled={!clientId || sync.connecting}
-            onClick={() => void sync.beginConnect()}
-          >
-            <Cloud size={17} />
-            {sync.connecting ? "Подключение…" : "Подключить OneDrive"}
-          </button>
-          {sync.connected && (
-            <>
-              <button
-                className="button secondary"
-                disabled={sync.status === "Синхронизация"}
-                onClick={() => report(sync.run())}
-              >
-                <RefreshCw size={17} />
-                Синхронизировать сейчас
-              </button>
-              <button className="text-button" onClick={() => setUnlink(true)}>
-                Отключить
-              </button>
-            </>
-          )}
-        </div>
-        {sync.lastSync && (
-          <p className="hint">
-            Последняя синхронизация:{" "}
-            {new Date(sync.lastSync).toLocaleString("ru")}
-          </p>
-        )}
-        {sync.error && (
-          <p className="error" role="alert">
-            {sync.error}
-          </p>
-        )}
-      </section>
+      <CloudSettings sync={sync} report={report} />
       {snapshot.conflicts.length > 0 && (
         <section className="panel">
           <h2>Конфликты изменений</h2>
@@ -307,8 +240,8 @@ export function SettingsPage({
         {storage && <p className="hint">{storage}</p>}
         <p className="hint">
           Очистка данных сайта удаляет локальную библиотеку. Храните JSON-копию
-          или подключите OneDrive. Закрытая iOS PWA не гарантирует фоновую
-          синхронизацию.
+          или подключите облачную синхронизацию. Закрытая iOS PWA не гарантирует
+          фоновую синхронизацию.
         </p>
       </section>
       {restore && (
@@ -322,43 +255,6 @@ export function SettingsPage({
             report(Promise.resolve(), "Копия восстановлена");
           }}
         />
-      )}
-      {unlink && (
-        <Confirm
-          title="Отключить OneDrive?"
-          description="Все локальные карточки, история и облачные данные сохранятся. Автоматическая синхронизация остановится."
-          close={() => setUnlink(false)}
-          action={sync.unlink}
-        />
-      )}
-      {sync.proposal && (
-        <Modal
-          title="Первое подключение: сравнение"
-          close={() => sync.setProposal(null)}
-        >
-          <p>Аккаунт: {sync.proposal.label}</p>
-          <p>
-            На устройстве: {sync.proposal.local.cards.length} карточек,{" "}
-            {sync.proposal.local.reviews.length} событий.
-          </p>
-          <p>
-            После объединения: {sync.proposal.merged.cards.length} карточек,{" "}
-            {sync.proposal.merged.reviews.length} событий. Конфликтов:{" "}
-            {sync.proposal.merged.conflicts.length}.
-          </p>
-          <p className="hint">
-            Сохранятся изменения с обоих устройств. Ничего не заменяется пустой
-            базой. Если нужен отдельный аккаунт без этих данных, отмените
-            подключение.
-          </p>
-          <AsyncForm
-            label="Объединить и включить синхронизацию"
-            cancel={() => sync.setProposal(null)}
-            submit={sync.accept}
-          >
-            <></>
-          </AsyncForm>
-        </Modal>
       )}
     </>
   );

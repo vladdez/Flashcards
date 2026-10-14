@@ -25,6 +25,10 @@ export class CardsDB extends Dexie {
   state!: Table<Snapshot & { id: "current" }, string>;
   meta!: Table<{ key: string; value: string }, string>;
   batches!: Table<Batch, string>;
+  syncReceipts!: Table<
+    { account: string; operationId: string },
+    [string, string]
+  >;
   constructor(name = "flashcards-v1") {
     super(name);
     this.version(1).stores({
@@ -46,6 +50,10 @@ export class CardsDB extends Dexie {
           id: "current",
         });
       });
+    // Additive migration: preserve the original journal, snapshot and legacy batches.
+    this.version(3).stores({
+      syncReceipts: "[account+operationId],account,operationId",
+    });
   }
 }
 export const db = new CardsDB();

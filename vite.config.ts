@@ -4,6 +4,13 @@ import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  if (
+    env.VITE_SUPABASE_PUBLISHABLE_KEY &&
+    !env.VITE_SUPABASE_PUBLISHABLE_KEY.startsWith("sb_publishable_")
+  )
+    throw new Error(
+      "VITE_SUPABASE_PUBLISHABLE_KEY must be a public sb_publishable_ key; secret keys must never enter a frontend build.",
+    );
   const base = env.VITE_BASE_PATH || "/";
   if (!base.startsWith("/") || !base.endsWith("/"))
     throw new Error("VITE_BASE_PATH must start and end with /");
@@ -45,7 +52,6 @@ export default defineConfig(({ mode }) => {
     ],
     build: {
       sourcemap: true,
-      rollupOptions: { input: { app: "index.html", auth: "auth.html" } },
     },
   };
 });
