@@ -43,6 +43,8 @@ export default function App() {
   useEffect(() => {
     const listener = () => setRoute(location.hash.slice(1) || "/");
     window.addEventListener("hashchange", listener);
+    // Auth may replace the root callback URL before this effect subscribes.
+    listener();
     return () => window.removeEventListener("hashchange", listener);
   }, []);
   useEffect(() => {

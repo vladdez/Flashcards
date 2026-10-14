@@ -1,47 +1,109 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../core/db";
+import { db, initialize } from "../core/db";
 import { materialize, unionOperations } from "../core/merge";
-import { type Snapshot } from "../core/model";
-import { clientId, connect, disconnect, getToken } from "./auth";
-import { GraphTransport } from "./graph";
-import { SyncEngine, type SyncStatus } from "./engine";
+import type { Snapshot } from "../core/model";
+import {
+  authError,
+  disconnect,
+  getSupabase,
+  restoreAuth,
+  sendSignInEmail,
+  verifyEmailCode,
+} from "./auth";
+import { accountScope, cloudConfig } from "./config";
+import { SupabaseTransport } from "./transport";
+import {
+  SyncEngine,
+  bindingKey,
+  enabledKey,
+  lastSyncKey,
+  type SyncStatus,
+} from "./engine";
 
 export function useSync() {
-  const [status, setStatus] = useState<SyncStatus>("Не подключён"),
-    [error, setError] = useState(""),
-    [connecting, setConnecting] = useState(false);
+  const [status, setStatus] = useState<SyncStatus>("Не подключён");
+  const [error, setError] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [sentEmail, setSentEmail] = useState("");
   const [proposal, setProposal] = useState<{
     account: string;
     label: string;
     local: Snapshot;
     remote: Snapshot;
     merged: Snapshot;
+    localIds: string;
+    revision: number;
   } | null>(null);
-  const account = useLiveQuery(() => db.meta.get("syncAccount"));
-  const lastSync = useLiveQuery(() => db.meta.get("lastSync"));
-  const count = useLiveQuery(() => db.operations.count());
+  const currentUser = useRef<string | undefined>(undefined);
   const engine = useRef<SyncEngine | undefined>(undefined);
+  const binding = useLiveQuery(() => db.meta.get(bindingKey));
+  const enabled = useLiveQuery(() => db.meta.get(enabledKey));
+  const scope = user ? accountScope(user.id) : "";
+  const lastSync = useLiveQuery(() => db.meta.get(lastSyncKey(scope)), [scope]);
+  const count = useLiveQuery(() => db.operations.count());
   const report = useCallback((state: SyncStatus, message?: string) => {
     setStatus(state);
     setError(message || "");
   }, []);
   useEffect(() => {
-    if (!clientId || !account?.value) {
+    if (!cloudConfig.configured) return;
+    let active = true;
+    const client = getSupabase();
+    const update = (next: User | null) => {
+      if (!active) return;
+      if (currentUser.current !== next?.id) {
+        engine.current?.stop();
+        engine.current = undefined;
+        setProposal(null);
+      }
+      currentUser.current = next?.id;
+      setUser(next);
+    };
+    // Keep this callback synchronous: awaiting another Auth call here can deadlock.
+    const { data } = client.auth.onAuthStateChange((_event, session) =>
+      update(session?.user || null),
+    );
+    void (async () => {
+      await restoreAuth(client);
+      const { data, error } = await client.auth.getSession();
+      if (error) throw error;
+      update(data.session?.user || null);
+    })().catch((e) => {
+      if (active) report("Ошибка", authError(e));
+    });
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
+  }, [report]);
+  const wrongAccount = !!binding?.value && !!scope && binding.value !== scope;
+  const connected =
+    !!scope &&
+    !wrongAccount &&
+    enabled?.value === scope &&
+    binding?.value === scope;
+  useEffect(() => {
+    if (!connected || !user) {
+      engine.current?.stop();
       engine.current = undefined;
-      setStatus("Не подключён");
+      setStatus(user ? "Требуется объединение" : "Не подключён");
       return;
     }
-    const id = account.value;
-    engine.current = new SyncEngine(
-      new GraphTransport(() => getToken(id)),
-      id,
+    const owner = user.id;
+    const current = new SyncEngine(
+      new SupabaseTransport(owner),
+      scope,
       db,
       report,
+      () => currentUser.current === owner,
     );
+    engine.current = current;
     const run = () => {
       if (document.visibilityState !== "hidden")
-        void engine.current?.run().catch(() => {});
+        void current.run().catch(() => {});
     };
     const offline = () => setStatus("Офлайн / ожидает");
     run();
@@ -50,44 +112,63 @@ export function useSync() {
     window.addEventListener("offline", offline);
     document.addEventListener("visibilitychange", run);
     return () => {
+      current.stop();
+      if (engine.current === current) engine.current = undefined;
       clearInterval(timer);
       window.removeEventListener("online", run);
       window.removeEventListener("offline", offline);
       document.removeEventListener("visibilitychange", run);
-      engine.current = undefined;
     };
-  }, [account?.value, report]);
+  }, [connected, scope, user?.id, report]);
   useEffect(() => {
     const timer = setTimeout(() => {
       void engine.current?.run().catch(() => {});
     }, 1800);
     return () => clearTimeout(timer);
   }, [count]);
-  async function beginConnect() {
+  async function sendEmail(email: string) {
+    try {
+      await sendSignInEmail(email);
+      setSentEmail(email.trim());
+      setError("");
+    } catch (e) {
+      throw new Error(authError(e), { cause: e });
+    }
+  }
+  async function verifyCode(token: string) {
+    try {
+      await verifyEmailCode(sentEmail, token);
+      setError("");
+    } catch (e) {
+      throw new Error(authError(e), { cause: e });
+    }
+  }
+  async function prepareMerge() {
+    if (!user || wrongAccount)
+      throw new Error(
+        "Эта библиотека привязана к другому аккаунту. Используйте отдельный профиль браузера.",
+      );
+    const owner = user.id;
     setConnecting(true);
     setError("");
     try {
-      const a = await connect(),
-        id = a.homeAccountId;
-      const candidate = new SyncEngine(
-        new GraphTransport(() => getToken(id)),
-        id,
-        db,
-        report,
-      );
-      const remote = await candidate.inspect(),
-        local = await db.operations.toArray();
-      // Previously seen operations already live locally. First connection to a new account has no seen metadata.
+      await initialize();
+      const candidate = new SyncEngine(new SupabaseTransport(owner), scope);
+      const remote = await candidate.inspect();
+      const local = await db.operations.toArray();
+      if (currentUser.current !== owner)
+        throw new Error("Аккаунт изменился. Повторите сравнение.");
       setProposal({
-        account: id,
-        label: a.username,
+        account: scope,
+        label: user.email || owner,
         local: materialize(local),
-        remote: materialize(
-          remote.operations.length
-            ? unionOperations(local, remote.operations)
-            : [],
-        ),
+        remote: materialize(remote.operations),
         merged: materialize(unionOperations(local, remote.operations)),
+        localIds: local
+          .map((op) => op.id)
+          .sort()
+          .join(","),
+        revision: remote.revision,
       });
     } catch (e) {
       report("Ошибка", e instanceof Error ? e.message : String(e));
@@ -96,18 +177,48 @@ export function useSync() {
     }
   }
   async function accept() {
-    if (!proposal) return;
-    const same = account?.value === proposal.account;
-    await db.meta.put({ key: "syncAccount", value: proposal.account });
+    if (
+      !proposal ||
+      !user ||
+      proposal.account !== accountScope(currentUser.current || "")
+    )
+      throw new Error("Аккаунт изменился. Повторите сравнение.");
+    const remoteHead = await new SupabaseTransport(user.id).head();
+    await db.transaction("rw", db.meta, db.operations, async () => {
+      const bound = await db.meta.get(bindingKey);
+      if (
+        (bound && bound.value !== proposal.account) ||
+        proposal.account !== accountScope(currentUser.current || "")
+      )
+        throw new Error(
+          "Библиотека привязана к другому аккаунту. Подключение отменено.",
+        );
+      const ids = (await db.operations.toArray())
+        .map((op) => op.id)
+        .sort()
+        .join(",");
+      if (ids !== proposal.localIds || remoteHead !== proposal.revision)
+        throw new Error(
+          "Данные изменились после сравнения. Закройте это окно и сравните заново.",
+        );
+      await db.meta.put({ key: bindingKey, value: proposal.account });
+      await db.meta.put({ key: enabledKey, value: proposal.account });
+    });
     setProposal(null);
-    if (same) await engine.current?.run();
   }
   async function unlink() {
+    engine.current?.stop();
     engine.current = undefined;
-    await db.meta.delete("syncAccount");
-    await disconnect();
+    // Disable in every tab before any asynchronous sign-out network request.
+    await db.meta.delete(enabledKey);
+    setProposal(null);
     setStatus("Не подключён");
     setError("");
+    try {
+      await disconnect();
+    } catch (e) {
+      throw new Error(authError(e), { cause: e });
+    }
   }
   return {
     status,
@@ -115,10 +226,15 @@ export function useSync() {
     connecting,
     proposal,
     setProposal,
-    beginConnect,
+    prepareMerge,
     accept,
     unlink,
-    connected: !!account?.value,
+    connected,
+    wrongAccount,
+    user,
+    sentEmail,
+    sendEmail,
+    verifyCode,
     lastSync: lastSync?.value,
     run: () => engine.current?.run() || Promise.resolve(),
   };

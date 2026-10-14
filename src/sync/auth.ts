@@ -1,57 +1,90 @@
-import type { PublicClientApplication } from "@azure/msal-browser";
-const scopes = ["Files.ReadWrite.AppFolder"];
-export const clientId = import.meta.env.VITE_MS_CLIENT_ID || "";
-let instance: Promise<PublicClientApplication> | undefined;
-export function msal() {
-  if (!clientId)
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { authRedirectUrl, cloudConfig } from "./config";
+
+let instance: SupabaseClient | undefined;
+export function getSupabase() {
+  if (!cloudConfig.configured)
+    throw new Error("Облачная синхронизация пока не настроена.");
+  return (instance ??= createClient(cloudConfig.url, cloudConfig.key, {
+    auth: {
+      flowType: "pkce",
+      detectSessionInUrl: false,
+      persistSession: true,
+      autoRefreshToken: true,
+      storageKey: `flashcards-auth:${new URL(cloudConfig.url).hostname}:${import.meta.env.BASE_URL}`,
+    },
+  }));
+}
+export function authError(error: unknown): string {
+  const code = (error as { code?: string })?.code;
+  if (
+    code === "over_email_send_rate_limit" ||
+    code === "over_request_rate_limit"
+  )
+    return "Слишком много запросов. Подождите минуту и попробуйте снова.";
+  if (
+    [
+      "otp_expired",
+      "flow_state_expired",
+      "flow_state_not_found",
+      "bad_code_verifier",
+    ].includes(code || "")
+  )
+    return "Ссылка или код истекли. Запросите новое письмо и откройте ссылку в этом же браузере.";
+  if (code === "email_address_not_authorized")
+    return "Отправка на этот адрес пока не разрешена. Владельцу проекта нужно настроить SMTP в Supabase.";
+  if (code === "signup_disabled")
+    return "Регистрация отключена в настройках проекта Supabase.";
+  if (error instanceof TypeError || !navigator.onLine)
+    return "Нет связи с Supabase. Локальные данные сохранены; повторите вход при появлении сети.";
+  return error instanceof Error
+    ? error.message
+    : "Не удалось выполнить вход. Проверьте сеть и повторите попытку.";
+}
+export async function sendSignInEmail(email: string, client = getSupabase()) {
+  const { error } = await client.auth.signInWithOtp({
+    email: email.trim(),
+    options: { emailRedirectTo: authRedirectUrl(), shouldCreateUser: true },
+  });
+  if (error) throw error;
+}
+export async function verifyEmailCode(
+  email: string,
+  token: string,
+  client = getSupabase(),
+) {
+  const { error } = await client.auth.verifyOtp({
+    email: email.trim(),
+    token: token.trim(),
+    type: "email",
+  });
+  if (error) throw error;
+}
+let restoration: Promise<void> | undefined;
+export function restoreAuth(client = getSupabase()) {
+  // React StrictMode must not redeem a one-use code twice.
+  return (restoration ??= finishRedirect(client));
+}
+export async function finishRedirect(
+  client: SupabaseClient,
+  href = location.href,
+) {
+  const url = new URL(href);
+  const code = url.searchParams.get("code");
+  const failed =
+    url.searchParams.has("error") || url.hash.includes("error_description=");
+  if (!code && !failed) return;
+  // Strip callback credentials before rendering; never log callback URLs.
+  history.replaceState(null, "", `${url.pathname}#/settings`);
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
+  if (failed)
     throw new Error(
-      "Для OneDrive задайте VITE_MS_CLIENT_ID при сборке. Инструкция есть в README.",
+      "Ссылка входа недействительна или истекла. Запросите новое письмо.",
     );
-  instance ||= (async () => {
-    const { PublicClientApplication } = await import("@azure/msal-browser");
-    const app = new PublicClientApplication({
-      auth: {
-        clientId,
-        authority:
-          import.meta.env.VITE_MS_AUTHORITY ||
-          "https://login.microsoftonline.com/common",
-        redirectUri:
-          import.meta.env.VITE_MS_REDIRECT_URI ||
-          new URL(import.meta.env.BASE_URL + "auth.html", location.origin).href,
-      },
-      cache: { cacheLocation: "localStorage" },
-    });
-    await app.initialize();
-    return app;
-  })();
-  return instance;
+  const { error } = await client.auth.exchangeCodeForSession(code!);
+  if (error) throw error;
 }
-export async function connect() {
-  const app = await msal();
-  const result = await app.loginPopup({ scopes, prompt: "select_account" });
-  if (!result.account) throw new Error("Microsoft не вернул аккаунт.");
-  app.setActiveAccount(result.account);
-  return result.account;
-}
-export async function getToken(accountId: string) {
-  const app = await msal();
-  const account = app.getAccount({ homeAccountId: accountId });
-  if (!account) throw new Error("Подключите Microsoft-аккаунт повторно.");
-  try {
-    return (await app.acquireTokenSilent({ account, scopes })).accessToken;
-  } catch (error) {
-    const { InteractionRequiredAuthError } =
-      await import("@azure/msal-browser");
-    if (error instanceof InteractionRequiredAuthError)
-      throw new Error(
-        "Требуется повторный вход Microsoft. Нажмите «Подключить OneDrive».",
-        { cause: error },
-      );
-    throw error;
-  }
-}
-export async function disconnect() {
-  const app = await msal();
-  await app.clearCache();
-  app.setActiveAccount(null);
+export async function disconnect(client = getSupabase()) {
+  const { error } = await client.auth.signOut({ scope: "local" });
+  if (error) throw error;
 }
