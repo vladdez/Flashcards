@@ -15,16 +15,10 @@ import {
 import { canonical, entityHeads, materialize, unionOperations } from "./merge";
 import { dayKey } from "./study";
 
-export type Batch = {
-  id: string;
-  operations: Operation[];
-  uploadedAccounts: string[];
-};
 export class CardsDB extends Dexie {
   operations!: Table<Operation, string>;
   state!: Table<Snapshot & { id: "current" }, string>;
   meta!: Table<{ key: string; value: string }, string>;
-  batches!: Table<Batch, string>;
   syncReceipts!: Table<
     { account: string; operationId: string },
     [string, string]
@@ -50,10 +44,16 @@ export class CardsDB extends Dexie {
           id: "current",
         });
       });
-    // Additive migration: preserve the original journal, snapshot and legacy batches.
     this.version(3).stores({
       syncReceipts: "[account+operationId],account,operationId",
     });
+    // Retire the unused file-sync cache; the journal and Supabase state are independent.
+    this.version(4)
+      .stores({ batches: null })
+      .upgrade(async (tx) => {
+        await tx.table("meta").bulkDelete(["syncAccount", "lastSync"]);
+        await tx.table("meta").where("key").startsWith("seen:").delete();
+      });
   }
 }
 export const db = new CardsDB();

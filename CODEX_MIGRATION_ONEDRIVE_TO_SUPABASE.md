@@ -1,5 +1,7 @@
 # Codex: migrate existing `vladdez/Flashcards` from OneDrive to Supabase
 
+**Scope clarification, 2026-10-14:** there are no real user cards, decks, or FSRS reviews in the previous cloud. Do not implement OneDrive import, cloud-history migration, or preservation of old cloud files. Preserve the existing application's functionality and future FSRS correctness. This clarification replaces the former legacy-data migration requirements.
+
 Repository: https://github.com/vladdez/Flashcards
 Published site: https://vladdez.github.io/Flashcards/
 Branch: create a feature branch, e.g. `feat/supabase-sync`, and open a pull request. Do not rewrite the application from scratch.
@@ -10,12 +12,12 @@ Replace only the current OneDrive / Microsoft Graph / MSAL cloud authentication 
 
 ## Existing architecture — inspect first
 
-- `README.md` describes the existing implementation, and `CODEX_SPEC.md` is an older OneDrive specification; **do not use it as the authority for cloud architecture**.
+- `README.md` describes the existing implementation; `CODEX_SPEC.md` retains product requirements and now specifies Supabase.
 - `src/core/model.ts`, `src/core/db.ts`, `src/core/merge.ts`, `src/core/study.ts`, `src/core/import.ts`, `src/core/backup.ts` implement models, durable operations, conflict resolution, FSRS, import and backups.
-- `src/sync/` implements the Microsoft Entra/MSAL and Microsoft Graph transport; replace/adapt its transport/auth code while preserving stable operation identifiers and merge semantics.
+- `src/sync/` now implements Supabase Auth and RPC transport; do not recreate the application or rewrite this working layer unnecessarily.
 - `.github/workflows/deploy.yml` deploys to Pages; preserve existing checks, and substitute Supabase build-time config for OneDrive config.
-- Old cloud sync used immutable operation batches `fc1-<UUID>.json` and a durable IndexedDB operation journal. Do **not** replace this with a naive last-write-wins upload of the full state.
-- Existing FSRS 5.4.2 review logs/replay need backward compatibility: never silently change how old logs are interpreted or reset them.
+- Keep the durable IndexedDB operation journal. Do **not** replace safe synchronization with a last-write-wins upload of the full state.
+- Keep FSRS 5.4.2 replay deterministic and directions independent for future users; the algorithm does not need a historical-data conversion.
 
 ## Tasks
 
@@ -29,13 +31,13 @@ Replace only the current OneDrive / Microsoft Graph / MSAL cloud authentication 
 
 5. **Local-first sync with conflict safety.** Local changes and reviews commit to IndexedDB first and enqueue durable operations. Synced operation IDs must be stable, retries idempotent, and no review logs discarded or duplicated. Pull and merge remote edits when signing in, when online, when tab becomes active and after local changes; don't guarantee background sync when an iOS PWA is closed. Preserve conflict-resolution UI for concurrent text edits and tombstones for deletions. Don't regress multi-device/offline merging. Avoid storing OAuth access tokens in export/backup.
 
-6. **Migration and old OneDrive data.** Leave existing local IndexedDB records intact. The initial Supabase sign-in must safely upload and merge those records (with explicit review and confirmation). If the user has existing operations only in OneDrive and not locally, do not claim they migrated; document the limitation and offer a separate import/backup pathway. Once local/cloud migration is tested, remove obsolete Graph/MSAL dependencies, UI copy, env variables and redirect bridge (`auth.html`) if no longer needed. Do not delete anything from the user's OneDrive account.
+6. **Remove the retired integration.** Remove obsolete Graph/MSAL dependencies, UI, environment variables, redirect bridge and unused file-batch cache. There is no OneDrive data import or export pathway to implement. Keep IndexedDB, the operation journal, backups and safe account binding for new local libraries. Published browser database schemas may still need a small version upgrade to remove obsolete metadata; this is not a user-history migration.
 
 7. **UI + existing features.** Preserve all already implemented features: last studied deck highlighted, folders/nesting, custom flags, per-deck progress (`scheduled_days >=21` for active directions), independently scheduled forward/reverse review modes, 80 new words per day by default and configurable, always-visible italic examples on flip, quick editing, four pastel rating buttons, streaks, CSV/XLSX import with preview/duplicate user decision and editable decks. Fix any regressions found.
 
 8. **GitHub Pages & tests.** Preserve GitHub Pages base `/Flashcards/`, deploy workflow and PWA service-worker scope. Set Actions Variables `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`; ensure they are injected at build time. Run `npm ci`, lint, typecheck, unit tests, build and Playwright e2e tests. Add meaningful Supabase RLS tests for two different users (read and write cross-user denied), auth/redirect tests, sync-offline-retry-idempotency/conflict tests. If access to a real Supabase project is unavailable, distinguish mocks from live integration tests; never claim to have verified live sync when it wasn't tested.
 
-9. **Documentation and PR.** Update README and eliminate or mark obsolete OneDrive instructions. Update legacy `CODEX_SPEC.md` so future Codex sessions do not revert to OneDrive, and/or add an explicit migration decision record. Document migrations and project dashboard settings, exact redirect URL, deployment, rollback, and how to recover data. Open a pull request with a concise test report and a checklist of manual dashboard actions required.
+9. **Documentation and PR.** Remove obsolete setup/transfer instructions. Document SQL installation, Auth settings, exact redirects, deployment and safe rollback. If no Supabase administrative tool is available, provide the committed SQL and a complete SQL Editor guide without blocking delivery on access. Open a new pull request with test results and clearly list remaining dashboard actions; do not automatically merge it.
 
 ## Acceptance criteria
 
@@ -44,7 +46,7 @@ Replace only the current OneDrive / Microsoft Graph / MSAL cloud authentication 
 - Edits and FSRS reviews sync safely between two signed-in devices, including offline concurrent work, without losing or doubling reviews.
 - No other user's rows can be read or written by a signed-in user; anon does not expose private data.
 - PWA still builds and deploys to `/Flashcards/`; core UI and imports work unchanged.
-- No runtime dependency on OneDrive/Graph/MSAL remains; cloud data in users' OneDrive is not deleted automatically.
+- No runtime dependency on OneDrive/Graph/MSAL remains. No mechanism for migrating old cloud data is developed.
 
 ## Reference
 

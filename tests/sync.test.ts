@@ -57,10 +57,9 @@ async function enable(database: CardsDB, account = "project:user") {
   ]);
 }
 describe("local-first Supabase sync protocol (mock transport)", () => {
-  it("requires explicit approval; existing OneDrive metadata never enables Supabase", async () => {
+  it("requires explicit account binding and approval before uploading a local library", async () => {
     const { database } = await fixture();
     databases.push(database);
-    await database.meta.put({ key: "syncAccount", value: "legacy" });
     const cloud = new MockCloud(),
       engine = new SyncEngine(cloud, "project:user", database);
     await expect(engine.run()).rejects.toThrow(/Подтвердите/);

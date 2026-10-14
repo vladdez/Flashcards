@@ -92,6 +92,56 @@ beforeEach(async () => {
   await pg.query("insert into auth.users(id) values($1),($2)", [a, b]);
 });
 describe("actual PostgreSQL migration and RLS (PGlite, not hosted Supabase)", () => {
+  it("runs the SQL Editor installation check without changing data and detects unsafe configuration", async () => {
+    const verify = readFileSync("supabase/verify_installation.sql", "utf8");
+    await push(a, library().operations);
+    const before = await pg.query(
+      "select * from public.flashcards_operations order by owner_id, revision",
+    );
+    const result = await pg.exec(verify);
+    expect(result.at(-1)?.rows[0]).toEqual({
+      result: expect.stringContaining("OK: Flashcards schema"),
+    });
+    expect(
+      (
+        await pg.query(
+          "select * from public.flashcards_operations order by owner_id, revision",
+        )
+      ).rows,
+    ).toEqual(before.rows);
+    await pg.exec(
+      "alter table public.flashcards_operations disable row level security",
+    );
+    try {
+      await expect(pg.exec(verify)).rejects.toThrow(/RLS is disabled/);
+    } finally {
+      await pg.exec(
+        "alter table public.flashcards_operations enable row level security",
+      );
+    }
+    await pg.exec(
+      "grant execute on function public.flashcards_push(jsonb) to anon",
+    );
+    try {
+      await expect(pg.exec(verify)).rejects.toThrow(/Unexpected anon EXECUTE/);
+    } finally {
+      await pg.exec(
+        "revoke execute on function public.flashcards_push(jsonb) from anon",
+      );
+    }
+    await pg.exec(
+      "grant update on public.flashcards_operations to authenticated",
+    );
+    try {
+      await expect(pg.exec(verify)).rejects.toThrow(
+        /Unexpected authenticated UPDATE/,
+      );
+    } finally {
+      await pg.exec(
+        "revoke update on public.flashcards_operations from authenticated",
+      );
+    }
+  });
   it("round trips immutable operations and independent schedule histories without duplicate reviews", async () => {
     const { operations, card, deck } = library();
     operations.push(
