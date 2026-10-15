@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   db,
@@ -8,7 +14,7 @@ import {
   readSnapshot,
   recordAnswer,
 } from "../src/core/db";
-import { newCard, newDeck, uid } from "../src/core/model";
+import { newCard, newDeck, nowISO, uid, type Folder } from "../src/core/model";
 import { DeckEditor } from "../src/components/Editors";
 import { Study } from "../src/pages/Study";
 import { Home } from "../src/pages/Home";
@@ -80,5 +86,86 @@ describe("important screens", () => {
     render(<Home snapshot={await readSnapshot()} />);
     expect(screen.getByText("ВАША ПОСЛЕДНЯЯ КОЛОДА")).toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: deck.name })).toHaveLength(1);
+  });
+  it("keeps the pinned deck visible inside its actual nested folder after a move", async () => {
+    const { deck, card } = await setup();
+    await recordAnswer(
+      card.id,
+      "forward",
+      3,
+      uid(),
+      undefined,
+      db,
+      new Date("2026-01-01T10:00:00Z"),
+    );
+    const parent: Folder = {
+      id: uid(),
+      parentId: null,
+      name: "Языки",
+      sortOrder: 0,
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
+    };
+    const folder: Folder = {
+      ...parent,
+      id: uid(),
+      parentId: parent.id,
+      name: "Немецкий",
+    };
+    await applyEdits([
+      editObject("folder", parent),
+      editObject("folder", folder),
+      editObject("deck", { ...deck, folderId: folder.id }, deck),
+    ]);
+    const { container, rerender } = render(
+      <Home snapshot={await readSnapshot()} />,
+    );
+    const contents = screen
+      .getByText("Немецкий", { selector: "strong" })
+      .closest("details")!;
+    expect(
+      within(contents).getByRole("heading", { name: deck.name }),
+    ).toBeVisible();
+    expect(
+      within(contents).getByRole("button", { name: `Открыть ${deck.name}` }),
+    ).toBeVisible();
+    expect(container.querySelectorAll(".featured")).toHaveLength(1);
+    expect(
+      container.querySelectorAll(".featured .eyebrow")[0],
+    ).toHaveTextContent("ВАША ПОСЛЕДНЯЯ КОЛОДА");
+    expect(contents.querySelectorAll(".deck-tile")).toHaveLength(1);
+    const second = newDeck("Вторая колода", folder.id);
+    const secondCard = newCard(second.id, "Wort", "Слово");
+    await applyEdits([
+      editObject("deck", second),
+      editObject("card", secondCard),
+    ]);
+    await recordAnswer(
+      secondCard.id,
+      "forward",
+      3,
+      uid(),
+      undefined,
+      db,
+      new Date("2026-01-02T10:00:00Z"),
+    );
+    rerender(<Home snapshot={await readSnapshot()} />);
+    expect(
+      within(container.querySelector<HTMLElement>(".featured")!).getByRole(
+        "heading",
+        { name: second.name },
+      ),
+    ).toBeVisible();
+    expect(contents.querySelectorAll(".deck-tile")).toHaveLength(2);
+    expect(
+      within(contents).getByRole("heading", { name: deck.name }),
+    ).toBeVisible();
+    expect(
+      within(contents).getByRole("heading", { name: second.name }),
+    ).toBeVisible();
+    fireEvent.click(
+      within(contents).getByRole("button", { name: `Открыть ${deck.name}` }),
+    );
+    expect(location.hash).toBe(`#/deck/${deck.id}`);
   });
 });
