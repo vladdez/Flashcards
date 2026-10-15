@@ -22,7 +22,7 @@ export type TableData = {
   errors: string[];
 };
 export type Mapping = { front: number; back: number; examples: number[] };
-export type Decision = "skip" | "update" | "add";
+export type Decision = "skip" | "update" | "merge" | "add";
 export type ImportRow = {
   index: number;
   front: string;
@@ -117,6 +117,14 @@ export function previewImport(
     };
   });
 }
+function mergeText(values: string[]): string[] {
+  // Keep distinct meanings (including case), while deduplicating repeated lines.
+  return [
+    ...new Set(
+      values.map((value) => value.normalize("NFC").trim()).filter(Boolean),
+    ),
+  ];
+}
 export async function commitImport(
   rows: ImportRow[],
   deckId: string,
@@ -152,6 +160,7 @@ export async function commitImport(
       const index = new Map(cards.map((c) => [normalize(c.front), c]));
       let added = 0,
         updated = 0,
+        merged = 0,
         skipped = 0;
       for (const row of rows) {
         if (row.error) {
@@ -166,16 +175,29 @@ export async function commitImport(
           skipped++;
           continue;
         }
-        if (existing && row.decision === "update") {
+        if (
+          existing &&
+          (row.decision === "update" || row.decision === "merge")
+        ) {
+          const merge = row.decision === "merge";
           const next = {
             ...existing,
-            front: row.front,
-            back: row.back,
-            examples: [...new Set([...existing.examples, ...row.examples])],
+            front: merge ? existing.front : row.front,
+            back: merge
+              ? mergeText(
+                  [existing.back, row.back].flatMap((text) =>
+                    text.split(/\r?\n/),
+                  ),
+                ).join("\n")
+              : row.back,
+            examples: merge
+              ? mergeText([...existing.examples, ...row.examples])
+              : [...new Set([...existing.examples, ...row.examples])],
           };
           edits.push(editObject("card", next, existing));
           index.set(key, next);
-          updated++;
+          if (merge) merged++;
+          else updated++;
         } else {
           const next = newCard(deckId, row.front, row.back, row.examples);
           edits.push(editObject("card", next));
@@ -183,9 +205,10 @@ export async function commitImport(
           added++;
         }
       }
-      if (!added && !updated) throw new Error("Нет карточек для импорта.");
+      if (!added && !updated && !merged)
+        throw new Error("Нет карточек для импорта.");
       await applyEdits(edits, database);
-      return { added, updated, skipped };
+      return { added, updated, merged, skipped };
     },
   );
 }

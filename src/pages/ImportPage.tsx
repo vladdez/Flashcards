@@ -43,6 +43,7 @@ export function ImportPage({
     [done, setDone] = useState<{
       added: number;
       updated: number;
+      merged: number;
       skipped: number;
       id: string;
     } | null>(null);
@@ -60,7 +61,13 @@ export function ImportPage({
   const added = preview.filter(
       (r) => !r.error && (!r.duplicate || r.decision === "add"),
     ).length,
-    updated = duplicates.filter((r) => r.decision === "update").length;
+    updated = duplicates.filter((r) => r.decision === "update").length,
+    merged = duplicates.filter((r) => r.decision === "merge").length;
+  const bulkDecision = duplicates.every(
+    (r) => r.decision === duplicates[0]?.decision,
+  )
+    ? duplicates[0]?.decision || ""
+    : "";
   function loaded(data: TableData, fileName?: string) {
     setTable(data);
     setMapping(guessMapping(data.headers));
@@ -102,8 +109,8 @@ export function ImportPage({
           </span>
           <h2>Слова на месте</h2>
           <p>
-            Добавлено: {done.added} · обновлено: {done.updated} · пропущено:{" "}
-            {done.skipped}
+            Добавлено: {done.added} · обновлено: {done.updated} · объединено
+            строк: {done.merged} · пропущено: {done.skipped}
           </p>
           <button
             className="button primary"
@@ -338,19 +345,50 @@ export function ImportPage({
                 </span>
               </div>
               {duplicates.length > 0 && (
-                <label>
-                  Применить ко всем дубликатам
-                  <select
-                    aria-label="Действие для всех дубликатов"
-                    defaultValue=""
-                    onChange={(e) => changeDecision(e.target.value)}
-                  >
-                    <option value="">Выберите действие</option>
-                    <option value="skip">Пропустить</option>
-                    <option value="update">Обновить существующие</option>
-                    <option value="add">Добавить отдельные</option>
-                  </select>
-                </label>
+                <div className="duplicate-actions">
+                  <p className="hint">
+                    Красным отмечены повторные слова в файле или выбранной
+                    колоде. Регистр и лишние пробелы не учитываются. Объединение
+                    сохранит все переводы и примеры в одной карточке, без сброса
+                    её прогресса. Обновление заменит перевод.
+                  </p>
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="button secondary"
+                      onClick={() => changeDecision("merge")}
+                    >
+                      Объединить все дубликаты
+                    </button>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      onClick={() => changeDecision("add")}
+                    >
+                      Добавить все, включая дубликаты
+                    </button>
+                  </div>
+                  <label>
+                    Применить ко всем дубликатам
+                    <select
+                      aria-label="Действие для всех дубликатов"
+                      value={bulkDecision}
+                      onChange={(e) => changeDecision(e.target.value)}
+                    >
+                      <option value="">Выберите действие</option>
+                      <option value="merge">
+                        Объединить переводы и примеры
+                      </option>
+                      <option value="skip">Пропустить</option>
+                      <option value="update">Обновить существующие</option>
+                      <option value="add">Добавить отдельные</option>
+                    </select>
+                  </label>
+                  <p className="hint" aria-live="polite">
+                    Осталось выбрать действие: {unresolved}. Выбор применится
+                    после нажатия «Импортировать».
+                  </p>
+                </div>
               )}
               <div className="table-scroll">
                 <table>
@@ -371,7 +409,12 @@ export function ImportPage({
                         }
                       >
                         <td>{r.index + 2}</td>
-                        <td>{r.front || "—"}</td>
+                        <td>
+                          {r.front || "—"}
+                          {r.duplicate && !r.error && (
+                            <span className="duplicate-badge">Дубликат</span>
+                          )}
+                        </td>
                         <td>
                           {r.back || "—"}
                           {r.examples.map((ex, i) => (
@@ -395,6 +438,7 @@ export function ImportPage({
                               }
                             >
                               <option value="">Выберите…</option>
+                              <option value="merge">Объединить</option>
                               <option value="skip">Пропустить</option>
                               <option value="update">Обновить</option>
                               <option value="add">Добавить отдельную</option>
@@ -409,7 +453,7 @@ export function ImportPage({
                 </table>
               </div>
               <AsyncForm
-                label={`Импортировать: ${added} новых, ${updated} обновлений`}
+                label={`Импортировать: ${added} новых, ${updated} обновлений${merged ? `, ${merged} объединений` : ""}`}
                 submit={async () => {
                   if (table.errors.length)
                     throw new Error("Исправьте ошибки файла.");
@@ -437,11 +481,12 @@ export function ImportPage({
                 }}
               >
                 <p className="hint">
-                  Будет добавлено {added}, обновлено {updated}, пропущено{" "}
+                  Будет добавлено {added}, обновлено {updated}, объединено строк{" "}
+                  {merged}, пропущено{" "}
                   {invalid +
                     duplicates.filter((r) => r.decision === "skip").length}
                   . Импорт сохранится целиком одной операцией. История
-                  обновляемых карточек останется.
+                  обновляемых и объединяемых карточек останется.
                 </p>
               </AsyncForm>
             </section>
