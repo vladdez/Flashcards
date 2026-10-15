@@ -91,7 +91,8 @@ export function Home({ snapshot }: { snapshot: Snapshot }) {
             </details>
           ))}
         <div className="deck-grid">
-          {filtered
+          {/* A pinned shortcut must not hide a deck from its actual folder. */}
+          {(parentId === null ? filtered : decks)
             .filter(
               (d) =>
                 (folders.some((f) => f.id === d.folderId)

@@ -182,3 +182,73 @@ test("visible duplicates can be merged together or imported as separate cards", 
   await page.getByRole("button", { name: "Открыть колоду" }).click();
   await expect(page.locator(".card-row")).toHaveCount(3);
 });
+test("moving studied decks into a folder keeps both visible when the pinned deck changes", async ({
+  page,
+}) => {
+  await page.goto("./");
+  await page.getByRole("button", { name: "Папка", exact: true }).click();
+  await page.getByLabel("Название папки").fill("Мои слова");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Сохранить", exact: true })
+    .click();
+
+  for (const [index, name] of ["Первая", "Вторая"].entries()) {
+    await page.goto("./#/import");
+    await page.getByLabel("Файл для импорта").setInputFiles({
+      name: `${name}.csv`,
+      mimeType: "text/csv",
+      buffer: Buffer.from("word,translation\nWort,Слово"),
+    });
+    await page.getByRole("button", { name: /Импортировать: 1 новых/ }).click();
+    await page.getByRole("button", { name: "Открыть колоду" }).click();
+    const deckUrl = page.url();
+    await page.getByRole("button", { name: "Начать занятие" }).click();
+    await page.getByRole("button", { name: "Показать ответ" }).click();
+    await page.getByRole("button", { name: /Легко/ }).click();
+    await expect(page.getByText(/Сохранено ответов: 1/)).toBeVisible();
+    await page.goto(deckUrl);
+    await page.getByRole("button", { name: "Настройки колоды" }).click();
+    await page
+      .getByRole("combobox", { name: "Папка", exact: true })
+      .selectOption({ label: "Мои слова" });
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Сохранить", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Моя библиотека", exact: true })
+      .click();
+    const folder = page.locator("details.folder");
+    await expect(folder.locator(".deck-tile")).toHaveCount(index + 1);
+    await expect(
+      folder.getByRole("heading", { name, exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".featured").getByRole("heading", { name, exact: true }),
+    ).toBeVisible();
+  }
+  const folder = page.locator("details.folder");
+  const toggle = folder.locator(":scope > summary > strong");
+  await toggle.click();
+  await expect(
+    folder.getByRole("heading", { name: "Первая", exact: true }),
+  ).not.toBeVisible();
+  await toggle.click();
+  for (const name of ["Первая", "Вторая"])
+    await expect(
+      folder.getByRole("heading", { name, exact: true }),
+    ).toBeVisible();
+  await page.reload();
+  await expect(folder.locator(".deck-tile")).toHaveCount(2);
+  await folder
+    .getByRole("button", { name: "Открыть Вторая", exact: true })
+    .click();
+  await expect(page.locator(".card-row")).toHaveCount(1);
+  await page.getByRole("button", { name: "Настройки колоды" }).click();
+  await expect(
+    page
+      .getByRole("combobox", { name: "Папка", exact: true })
+      .locator("option:checked"),
+  ).toHaveText("Мои слова");
+});
