@@ -6,6 +6,9 @@ import {
   verifyEmailCode,
   disconnect,
   authError,
+  verifyEmailLink,
+  pendingSignInEmail,
+  clearPendingSignInEmail,
 } from "../src/sync/auth";
 import { authRedirectUrl, validateCloudConfig } from "../src/sync/config";
 function fakeClient() {
@@ -20,6 +23,8 @@ function fakeClient() {
 }
 afterEach(() => {
   history.replaceState(null, "", "/");
+  localStorage.clear();
+  vi.useRealTimers();
 });
 describe("Supabase auth configuration and root callbacks", () => {
   it("supports offline-only configuration and rejects privileged client keys", () => {
@@ -92,5 +97,87 @@ describe("Supabase auth configuration and root callbacks", () => {
     const { client, auth } = fakeClient();
     await disconnect(client);
     expect(auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+  it.each(["magiclink", "signup", "email"])(
+    "redeems a pasted %s link in the current app without PKCE or navigation",
+    async (type) => {
+      const { client, auth } = fakeClient();
+      const project = "https://example.supabase.co";
+      const token = "pkce_" + "a".repeat(64);
+      const before = location.href;
+      await verifyEmailLink(
+        ` ${project}/auth/v1/verify?token=${token}&type=${type}&redirect_to=https://untrusted.example/ `,
+        client,
+        project,
+      );
+      expect(auth.verifyOtp).toHaveBeenCalledWith({
+        token_hash: token,
+        type: "email",
+      });
+      expect(auth.exchangeCodeForSession).not.toHaveBeenCalled();
+      expect(location.href).toBe(before);
+      expect(JSON.stringify(localStorage)).not.toContain(token);
+    },
+  );
+  it("accepts a token_hash link and propagates an expired-token error", async () => {
+    const { client, auth } = fakeClient();
+    const error = Object.assign(new Error("Expired"), { code: "otp_expired" });
+    auth.verifyOtp.mockResolvedValueOnce({ error, data: {} });
+    await expect(
+      verifyEmailLink(
+        `https://example.supabase.co/auth/v1/verify?token_hash=${"b".repeat(64)}&type=email`,
+        client,
+        "https://example.supabase.co",
+      ),
+    ).rejects.toBe(error);
+    expect(authError(error)).toContain("новое письмо");
+  });
+  it.each([
+    "not a URL",
+    "https://other.supabase.co/auth/v1/verify?token=HASH&type=email",
+    "https://example.supabase.co.attacker.test/auth/v1/verify?token=HASH&type=email",
+    "https://example.supabase.co@attacker.test/auth/v1/verify?token=HASH&type=email",
+    "http://example.supabase.co/auth/v1/verify?token=HASH&type=email",
+    "https://user:password@example.supabase.co/auth/v1/verify?token=HASH&type=email",
+    "https://example.supabase.co/not-auth?token=HASH&type=email",
+    "https://example.supabase.co/auth/v1/verify?token=HASH&type=recovery",
+    "https://example.supabase.co/auth/v1/verify?token=HASH&type=invite",
+    "https://example.supabase.co/auth/v1/verify?token=HASH&type=email&type=signup",
+    "https://example.supabase.co/auth/v1/verify?token=HASH&token=HASH&type=email",
+    "https://example.supabase.co/auth/v1/verify?token=HASH&token_hash=HASH&type=email",
+    "https://example.supabase.co/auth/v1/verify?type=email",
+    "https://example.supabase.co/auth/v1/verify?token=short&type=email",
+    "https://example.supabase.co/auth/v1/verify?token=HASH&type=email#access_token=secret",
+  ])(
+    "rejects untrusted or unrelated links before sending credentials: %s",
+    async (link) => {
+      const { client, auth } = fakeClient();
+      await expect(
+        verifyEmailLink(
+          link.replaceAll("HASH", "a".repeat(64)),
+          client,
+          "https://example.supabase.co",
+        ),
+      ).rejects.toThrow("Скопируйте адрес");
+      expect(auth.verifyOtp).not.toHaveBeenCalled();
+      expect(auth.exchangeCodeForSession).not.toHaveBeenCalled();
+    },
+  );
+  it("explains missing PKCE storage and offers a recovery inside the original app", () => {
+    const message = authError({ code: "pkce_code_verifier_not_found" });
+    expect(message).toContain("другом браузере");
+    expect(message).toContain("Ссылка из письма");
+    expect(message).not.toContain("SSR");
+  });
+  it("restores the pending email across reloads, expires it, and clears it after sign-in", async () => {
+    vi.useFakeTimers();
+    const { client } = fakeClient();
+    await sendSignInEmail(" me@example.com ", client);
+    expect(pendingSignInEmail()).toBe("me@example.com");
+    vi.advanceTimersByTime(60 * 60 * 1000);
+    expect(pendingSignInEmail()).toBe("");
+    await sendSignInEmail("me@example.com", client);
+    clearPendingSignInEmail();
+    expect(pendingSignInEmail()).toBe("");
   });
 });

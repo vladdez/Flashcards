@@ -279,3 +279,116 @@ test("GitHub Pages root magic-link callback restores a session and requires merg
   ).toBeVisible();
   expect(remote.operations).toHaveLength(0);
 });
+test("email link in another browser recovers inside the app and syncs local folders and cards", async ({
+  page,
+  context,
+  browser,
+}) => {
+  const remote = cloud();
+  await remote.intercept(context);
+  const deckHash = await importCard(page);
+  await settings(page);
+  test.skip(
+    await page
+      .getByText("Облако пока не настроено", { exact: true })
+      .isVisible(),
+    "Build without public Supabase configuration.",
+  );
+  await page.getByLabel("Email", { exact: true }).fill("learner@example.test");
+  const request = page.waitForRequest(
+    (req) => new URL(req.url()).pathname === "/auth/v1/otp",
+  );
+  await page.getByRole("button", { name: "Получить письмо для входа" }).click();
+  const projectUrl = new URL((await request).url()).origin;
+  await expect(
+    page.getByRole("status").filter({ hasText: "Письмо отправлено" }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Email", { exact: true })).toHaveValue(
+    "learner@example.test",
+  );
+  await expect(page.getByLabel("Код из письма")).toBeVisible();
+
+  await page
+    .locator(".email-link-sign-in")
+    .screenshot({
+      path: `test-results/email-link-${test.info().project.name}.png`,
+    });
+
+  const other = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173/Flashcards/",
+  });
+  try {
+    await remote.intercept(other);
+    const phone = await other.newPage();
+    // There is no PKCE verifier in this separate browser, as with an email app.
+    await phone.goto("./?code=opened-in-email-browser");
+    await expect(phone.getByRole("alert")).toContainText("другом браузере");
+    await expect(phone.getByRole("alert")).toContainText("Ссылка из письма");
+    await expect(phone).toHaveURL(/\/Flashcards\/#\/settings$/);
+    expect(remote.operations).toHaveLength(0);
+
+    // A new confirmation link is copied, never opened. Verification stays in
+    // the original app and must not require the email browser's local storage.
+    const token = "pkce_" + "a".repeat(64);
+    const verification = page.waitForRequest(
+      (req) => new URL(req.url()).pathname === "/auth/v1/verify",
+    );
+    await page
+      .getByLabel("Ссылка из письма", { exact: true })
+      .fill(`${projectUrl}/auth/v1/verify?token=${token}&type=magiclink`);
+    await page
+      .getByRole("button", { name: "Войти по ссылке", exact: true })
+      .click();
+    expect((await verification).postDataJSON()).toMatchObject({
+      token_hash: token,
+      type: "email",
+    });
+    await expect(page.getByText("Аккаунт:", { exact: true })).toBeVisible();
+    expect(remote.operations).toHaveLength(0);
+    expect(
+      await page.evaluate(() =>
+        Object.keys(localStorage).filter((key) =>
+          key.startsWith("flashcards-pending-email:"),
+        ),
+      ),
+    ).toEqual([]);
+    await approve(page);
+
+    await phone.goto("./#/");
+    await phone.getByRole("button", { name: "Папка", exact: true }).click();
+    await phone.getByLabel("Название папки").fill("Папка с телефона");
+    await phone
+      .getByRole("dialog")
+      .getByRole("button", { name: "Сохранить", exact: true })
+      .click();
+    await settings(phone);
+    await phone
+      .getByLabel("Ссылка из письма", { exact: true })
+      .fill(
+        `${projectUrl}/auth/v1/verify?token=${"b".repeat(64)}&type=magiclink`,
+      );
+    await phone
+      .getByRole("button", { name: "Войти по ссылке", exact: true })
+      .click();
+    await expect(phone.getByRole("alert")).toHaveCount(0);
+    await approve(phone);
+    await phone.goto(`./${deckHash}`);
+    await expect(phone.locator(".card-row")).toContainText("Wort");
+    await expect(phone.locator(".card-row")).toContainText("Слово");
+    // Reopening the first app automatically downloads the second app's folder.
+    await page.reload();
+    await expect(page.locator(".panel .pill")).toHaveText("Синхронизировано");
+    await page.goto("./#/");
+    await expect(
+      page.getByRole("button", {
+        name: "Редактировать папку Папка с телефона",
+      }),
+    ).toBeVisible();
+    expect(
+      remote.operations.filter((op) => op.entity === "folder"),
+    ).toHaveLength(1);
+  } finally {
+    await other.close();
+  }
+});

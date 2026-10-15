@@ -6,11 +6,14 @@ import { materialize, unionOperations } from "../core/merge";
 import type { Snapshot } from "../core/model";
 import {
   authError,
+  clearPendingSignInEmail,
   disconnect,
   getSupabase,
+  pendingSignInEmail,
   restoreAuth,
   sendSignInEmail,
   verifyEmailCode,
+  verifyEmailLink,
 } from "./auth";
 import { accountScope, cloudConfig } from "./config";
 import { SupabaseTransport } from "./transport";
@@ -27,7 +30,7 @@ export function useSync() {
   const [error, setError] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [user, setUser] = useState<User | null>(null);
-  const [sentEmail, setSentEmail] = useState("");
+  const [sentEmail, setSentEmail] = useState(pendingSignInEmail);
   const [proposal, setProposal] = useState<{
     account: string;
     label: string;
@@ -54,13 +57,19 @@ export function useSync() {
     const client = getSupabase();
     const update = (next: User | null) => {
       if (!active) return;
-      if (currentUser.current !== next?.id) {
+      const accountChanged = currentUser.current !== next?.id;
+      if (accountChanged) {
         engine.current?.stop();
         engine.current = undefined;
         setProposal(null);
       }
       currentUser.current = next?.id;
       setUser(next);
+      if (next && accountChanged) {
+        clearPendingSignInEmail();
+        setSentEmail("");
+        setError("");
+      }
     };
     // Keep this callback synchronous: awaiting another Auth call here can deadlock.
     const { data } = client.auth.onAuthStateChange((_event, session) =>
@@ -130,7 +139,7 @@ export function useSync() {
     try {
       await sendSignInEmail(email);
       setSentEmail(email.trim());
-      setError("");
+      report("Не подключён");
     } catch (e) {
       throw new Error(authError(e), { cause: e });
     }
@@ -138,6 +147,14 @@ export function useSync() {
   async function verifyCode(token: string) {
     try {
       await verifyEmailCode(sentEmail, token);
+      setError("");
+    } catch (e) {
+      throw new Error(authError(e), { cause: e });
+    }
+  }
+  async function verifyLink(link: string) {
+    try {
+      await verifyEmailLink(link);
       setError("");
     } catch (e) {
       throw new Error(authError(e), { cause: e });
@@ -235,6 +252,7 @@ export function useSync() {
     sentEmail,
     sendEmail,
     verifyCode,
+    verifyLink,
     lastSync: lastSync?.value,
     run: () => engine.current?.run() || Promise.resolve(),
   };
