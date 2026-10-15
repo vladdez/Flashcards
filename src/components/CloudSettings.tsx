@@ -12,8 +12,9 @@ export function CloudSettings({
   sync: SyncController;
   report: (p: Promise<unknown>, message?: string) => void;
 }) {
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(sync.sentEmail);
   const [code, setCode] = useState("");
+  const [link, setLink] = useState("");
   const [unlink, setUnlink] = useState(false);
   return (
     <>
@@ -39,6 +40,11 @@ export function CloudSettings({
           </div>
         ) : !sync.user ? (
           <>
+            <p className="notice">
+              Пока синхронизация не подключена, изменения видны только на этом
+              устройстве. На телефоне и компьютере войдите с одним email и
+              подтвердите объединение данных на каждом устройстве.
+            </p>
             <AsyncForm
               label="Получить письмо для входа"
               submit={() => sync.sendEmail(email)}
@@ -57,9 +63,50 @@ export function CloudSettings({
             {sync.sentEmail && (
               <div className="notice" role="status">
                 <p>
-                  Письмо отправлено на {sync.sentEmail}. Откройте ссылку в этом
-                  же браузере. Если письмо содержит одноразовый код, введите его
-                  ниже.
+                  Письмо отправлено на {sync.sentEmail}. Вернитесь сюда после
+                  копирования ссылки или кода из письма.
+                </p>
+              </div>
+            )}
+            <div className="email-link-sign-in">
+              <h3>Войти по ссылке из письма</h3>
+              <p className="hint">
+                На iPhone нажмите и удерживайте кнопку входа в новом письме,
+                выберите «Скопировать ссылку» (Link kopieren). Вернитесь в
+                Flashcards с главного экрана и вставьте ссылку ниже. Открывать
+                её в почтовом браузере не нужно.
+              </p>
+              <AsyncForm
+                label="Войти по ссылке"
+                submit={async () => {
+                  try {
+                    await sync.verifyLink(link);
+                  } finally {
+                    setLink("");
+                  }
+                }}
+              >
+                <label>
+                  Ссылка из письма
+                  <textarea
+                    rows={3}
+                    inputMode="url"
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    required
+                    value={link}
+                    onChange={(e) => setLink(e.target.value)}
+                    placeholder="Вставьте скопированную ссылку входа"
+                  />
+                </label>
+              </AsyncForm>
+            </div>
+            {sync.sentEmail && (
+              <div className="notice">
+                <p>
+                  Если в письме есть цифровой код, можно ввести его вместо
+                  ссылки.
                 </p>
                 <AsyncForm
                   label="Войти по коду"
