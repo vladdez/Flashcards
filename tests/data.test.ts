@@ -93,6 +93,7 @@ describe("imports and IndexedDB transactions", () => {
     expect(await commitImport(rows, deck.id, undefined, database)).toEqual({
       added: 1,
       updated: 1,
+      merged: 0,
       skipped: 1,
     });
     const after = await readSnapshot(database);
@@ -104,6 +105,77 @@ describe("imports and IndexedDB transactions", () => {
     expect(after.schedules).toEqual(before.schedules);
     expect(after.reviews).toEqual(before.reviews);
   });
+  it("merges all meanings and examples into a studied card without changing either FSRS direction", async () => {
+    const { database, deck, card } = await setup();
+    await recordAnswer(card.id, "forward", 4, uid(), undefined, database);
+    await recordAnswer(card.id, "reverse", 3, uid(), undefined, database);
+    const before = await readSnapshot(database);
+    const table = parseText(
+      'word;translation;example\n GRÜßE ;"Приветствия\nПривет";Hallo!\nGrüße;"US\nus";Liebe Grüße aus Berlin!\nGrüße;"Привет\nUS\nGrüße\nGrüße";Hallo!',
+    );
+    const decisions = { 0: "merge", 1: "merge", 2: "merge" } as const;
+    const rows = previewImport(
+      table,
+      guessMapping(table.headers),
+      before.cards,
+      decisions,
+    );
+    expect(await commitImport(rows, deck.id, undefined, database)).toEqual({
+      added: 0,
+      updated: 0,
+      merged: 3,
+      skipped: 0,
+    });
+    const after = await readSnapshot(database);
+    expect(after.cards).toHaveLength(1);
+    expect(after.cards[0]).toMatchObject({
+      id: card.id,
+      front: card.front,
+      back: "Приветствия\nПривет\nUS\nus\nGrüße",
+      examples: [...card.examples, "Hallo!"],
+    });
+    expect(after.schedules).toEqual(before.schedules);
+    expect(after.reviews).toEqual(before.reviews);
+    // Re-importing does not duplicate a meaning or example, including Unicode variants.
+    await commitImport(
+      previewImport(table, guessMapping(table.headers), after.cards, decisions),
+      deck.id,
+      undefined,
+      database,
+    );
+    const repeated = await readSnapshot(database);
+    expect(repeated.cards[0].back).toBe(after.cards[0].back);
+    expect(repeated.cards[0].examples).toEqual(after.cards[0].examples);
+    expect(repeated.schedules).toEqual(before.schedules);
+    expect(repeated.reviews).toEqual(before.reviews);
+  });
+  it("merges repeated rows into one new card while preserving other words and skipped rows", async () => {
+    const { database } = await setup();
+    const deck = newDeck("Merged import");
+    const table = parseText(
+      "word;translation;example\nBank;банк;Die Bank ist offen.\nBANK;скамейка;Eine Bank im Park.\nBank;банк;Die Bank ist offen.\nHallo;Привет;Hallo!\nBank;Пропустить;Не добавлять",
+    );
+    const rows = previewImport(table, guessMapping(table.headers), [], {
+      1: "merge",
+      2: "merge",
+      4: "skip",
+    });
+    expect(await commitImport(rows, deck.id, deck, database)).toEqual({
+      added: 2,
+      updated: 0,
+      merged: 2,
+      skipped: 1,
+    });
+    const cards = (await readSnapshot(database)).cards.filter(
+      (c) => c.deckId === deck.id,
+    );
+    expect(cards).toHaveLength(2);
+    expect(cards.find((c) => c.front === "Bank")).toMatchObject({
+      back: "банк\nскамейка",
+      examples: ["Die Bank ist offen.", "Eine Bank im Park."],
+    });
+    expect(cards.find((c) => c.front === "Hallo")?.back).toBe("Привет");
+  });
   it("new deck import is atomic and reports invalid skipped rows", async () => {
     const { database } = await setup();
     const deck = newDeck("Import");
@@ -112,6 +184,7 @@ describe("imports and IndexedDB transactions", () => {
     expect(await commitImport(rows, deck.id, deck, database)).toEqual({
       added: 1,
       updated: 0,
+      merged: 0,
       skipped: 1,
     });
     expect((await readSnapshot(database)).decks).toHaveLength(2);

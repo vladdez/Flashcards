@@ -1,7 +1,7 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #243a33;
-  background: #f7f8f4;
+  color: var(--text);
+  background: var(--bg);
   font-synthesis: none;
   font-weight: 400;
   --bg: #f7f8f4;
@@ -963,6 +963,7 @@ input[type="checkbox"] {
   font-size: 13px;
   margin: 6px 0;
   overflow-wrap: anywhere;
+  white-space: pre-line;
 }
 .card-row .example {
   color: var(--muted);
@@ -1132,7 +1133,22 @@ td select {
   font-size: 12px;
 }
 .duplicate {
-  background: #fff9ec;
+  background: #fff0f1;
+  --duplicate-text: #a52c3d;
+}
+.duplicate-badge {
+  display: block;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 3px 6px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  color: var(--duplicate-text);
+  font-size: 11px;
+  font-weight: 650;
+}
+.duplicate-actions .actions {
+  margin-bottom: 16px;
 }
 .invalid {
   opacity: 0.65;
@@ -1325,6 +1341,7 @@ td select {
 .study-content h1 {
   font-size: 42px;
   letter-spacing: -1px;
+  white-space: pre-line;
 }
 .study-content h1.question-small {
   font-size: 22px;
@@ -1337,6 +1354,7 @@ td select {
   font-size: 31px;
   line-height: 1.3;
   letter-spacing: -0.5px;
+  white-space: pre-line;
 }
 .answer-divider {
   height: 1px;
@@ -1548,7 +1566,8 @@ td select {
   color: #c0d6ff;
 }
 :root[data-theme="dark"] .duplicate {
-  background: #3a3423;
+  background: #502e33;
+  --duplicate-text: #fac1c3;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="dark"]) {
@@ -1596,7 +1615,8 @@ td select {
     color: #c0d6ff;
   }
   :root[data-theme="system"] .duplicate {
-    background: #3a3423;
+    background: #502e33;
+    --duplicate-text: #fac1c3;
   }
 }
 @media (min-width: 1600px) {
