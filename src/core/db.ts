@@ -54,6 +54,15 @@ export class CardsDB extends Dexie {
         await tx.table("meta").bulkDelete(["syncAccount", "lastSync"]);
         await tx.table("meta").where("key").startsWith("seen:").delete();
       });
+    // Apply the 30-minute Good learning step to existing schedules as well.
+    this.version(5)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx.table("state").put({
+          ...materialize(await tx.table("operations").toArray()),
+          id: "current",
+        });
+      });
   }
 }
 export const db = new CardsDB();

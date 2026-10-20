@@ -18,7 +18,7 @@ import {
   type Snapshot,
 } from "../core/model";
 import { applyEdits, resetCard } from "../core/db";
-import { deckProgress } from "../core/study";
+import { deckProgress, LEARNED_INTERVAL_DAYS } from "../core/study";
 import { exportDeck } from "../core/import";
 import { CardEditor, DeckEditor } from "../components/Editors";
 import { Confirm, Empty, navigate } from "../components/Common";
@@ -94,7 +94,7 @@ export function DeckPage({
             {progress.learned}
             <span> / {progress.total}</span>
           </strong>
-          <p>выучено · интервал от 21 дня</p>
+          <p>выучено · интервал от {LEARNED_INTERVAL_DAYS} дней</p>
           <div className="progress-track">
             <span style={{ width: `${progress.percent}%` }} />
           </div>

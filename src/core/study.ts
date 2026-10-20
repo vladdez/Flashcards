@@ -1,6 +1,10 @@
 import {
+  BasicLearningStepsStrategy,
   createEmptyCard,
   fsrs,
+  Rating,
+  State,
+  StrategyMode,
   type Card as FSRSCard,
   type Grade,
 } from "ts-fsrs";
@@ -25,8 +29,19 @@ export const deserialize = (c: SerializedFSRS): FSRSCard => ({
   due: new Date(c.due),
   last_review: c.last_review ? new Date(c.last_review) : undefined,
 });
-export const scheduler = (retention: number) =>
-  fsrs({ request_retention: retention, enable_fuzz: false });
+export function scheduler(retention: number) {
+  const instance = fsrs({ request_retention: retention, enable_fuzz: false });
+  // Only the first Good learning step changes; Hard, graduation and
+  // relearning keep FSRS defaults. The same rule also replays past answers.
+  instance.useStrategy(StrategyMode.LEARNING_STEPS, (params, state, step) => {
+    const steps = BasicLearningStepsStrategy(params, state, step);
+    const good = steps[Rating.Good];
+    if ((state === State.New || state === State.Learning) && good)
+      steps[Rating.Good] = { ...good, scheduled_minutes: 30 };
+    return steps;
+  });
+  return instance;
+}
 export function preview(
   schedule: Schedule | undefined,
   retention: number,
@@ -165,6 +180,7 @@ export function studyQueue(
       ? fresh
       : [...dueItems, ...fresh];
 }
+export const LEARNED_INTERVAL_DAYS = 3;
 export function deckProgress(
   deck: Deck,
   cards: Card[],
@@ -180,7 +196,8 @@ export function deckProgress(
     const states = directions(deck.studyMode).map((d) =>
       map.get(`${card.id}:${d}`),
     );
-    if (states.every((s) => s && s.scheduled_days >= 21)) learned++;
+    if (states.every((s) => s && s.scheduled_days >= LEARNED_INTERVAL_DAYS))
+      learned++;
     due += states.filter((s) => s && new Date(s.due) <= now).length;
     if (states.some((s) => !s)) fresh++;
   }

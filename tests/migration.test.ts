@@ -1,7 +1,9 @@
 import Dexie from "dexie";
+import { createEmptyCard, fsrs, Rating } from "ts-fsrs";
 import { afterEach, expect, it } from "vitest";
 import { CardsDB, readSnapshot } from "../src/core/db";
 import { canonical, materialize } from "../src/core/merge";
+import { serialize } from "../src/core/study";
 import { makeBackup, restoreBackup } from "../src/core/backup";
 import { newCard, newDeck, uid, type Operation } from "../src/core/model";
 import { review, reviewOp } from "./fixtures";
@@ -10,8 +12,8 @@ const databases: Dexie[] = [];
 afterEach(async () => {
   for (const db of databases.splice(0)) await db.delete();
 });
-it.each([2, 3])(
-  "upgrades v%i to v4, removes retired sync caches and retains the library and current sync state",
+it.each([2, 3, 4])(
+  "upgrades v%i to v5 and recalculates Good from 10 to 30 minutes",
   async (version) => {
     const name = `legacy-${uid()}`,
       legacy = new Dexie(name);
@@ -19,8 +21,8 @@ it.each([2, 3])(
       operations: "id,entity,entityId,timestamp,[entity+entityId]",
       state: "id",
       meta: "key",
-      batches: "id",
-      ...(version === 3
+      ...(version < 4 ? { batches: "id" } : {}),
+      ...(version >= 3
         ? { syncReceipts: "[account+operationId],account,operationId" }
         : {}),
     });
@@ -94,27 +96,47 @@ it.each([2, 3])(
         uploadedAccounts: ["old-onedrive-account"],
       };
     await legacy.table("operations").bulkPut(operations);
-    await legacy.table("state").put({ ...snapshot, id: "current" });
+    const stored = structuredClone(snapshot);
+    stored.schedules.find((s) => s.direction === "forward")!.fsrs = serialize(
+      fsrs({ request_retention: 0.9, enable_fuzz: false }).next(
+        createEmptyCard(new Date(now)),
+        new Date(now),
+        Rating.Good,
+      ).card,
+    );
+    expect(
+      stored.schedules.find((s) => s.direction === "forward")!.fsrs.due,
+    ).toBe("2026-01-01T12:10:00.000Z");
+    await legacy.table("state").put({ ...stored, id: "current" });
     await legacy.table("meta").bulkPut([
       { key: "deviceId", value: deviceId },
-      { key: "syncAccount", value: "old-onedrive-account" },
-      { key: "lastSync", value: now },
-      { key: "seen:old-account:file-id", value: "old-etag" },
+      ...(version < 4
+        ? [
+            { key: "syncAccount", value: "old-onedrive-account" },
+            { key: "lastSync", value: now },
+            { key: "seen:old-account:file-id", value: "old-etag" },
+          ]
+        : []),
       { key: "supabaseBinding", value: "project:user" },
       { key: "supabaseEnabled", value: "project:user" },
       { key: cursorKey("project:user"), value: "1" },
       { key: lastSyncKey("project:user"), value: now },
       { key: "old-token-marker", value: "never-export-me" },
     ]);
-    await legacy.table("batches").put(batch);
+    if (version < 4) await legacy.table("batches").put(batch);
     const receipt = { account: "project:user", operationId: operations[0].id };
-    if (version === 3) await legacy.table("syncReceipts").put(receipt);
+    if (version >= 3) await legacy.table("syncReceipts").put(receipt);
     legacy.close();
     const upgraded = new CardsDB(name);
     databases.push(upgraded);
     await upgraded.open();
-    expect(upgraded.verno).toBe(4);
+    expect(upgraded.verno).toBe(5);
     expect(canonical(await readSnapshot(upgraded))).toBe(canonical(snapshot));
+    expect(
+      (await readSnapshot(upgraded)).schedules.find(
+        (s) => s.direction === "forward",
+      )!.fsrs.due,
+    ).toBe("2026-01-01T12:30:00.000Z");
     expect(await upgraded.operations.count()).toBe(operations.length);
     expect(await upgraded.meta.get("deviceId")).toEqual({
       key: "deviceId",
@@ -140,7 +162,7 @@ it.each([2, 3])(
       value: now,
     });
     expect(await upgraded.syncReceipts.toArray()).toEqual(
-      version === 3 ? [receipt] : [],
+      version >= 3 ? [receipt] : [],
     );
     const backup = await makeBackup(upgraded);
     expect(JSON.stringify(backup)).not.toContain("never-export-me");

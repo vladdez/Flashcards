@@ -60,6 +60,29 @@ describe("important screens", () => {
     expect(screen.getByText("Liebe Grüße!").tagName).toBe("EM");
     expect(screen.getByRole("button", { name: /Хорошо/ })).toBeEnabled();
   });
+  it("shows 30 minutes for Good and saves the same interval", async () => {
+    const { deck, snapshot } = await setup();
+    render(<Study deck={deck} snapshot={snapshot} />);
+    fireEvent.click(screen.getByRole("button", { name: /Показать ответ/ }));
+    const good = screen.getByRole("button", { name: /Хорошо/ });
+    expect(good).toHaveTextContent("30 мин");
+    expect(screen.getByRole("button", { name: /Трудно/ })).toHaveTextContent(
+      "6 мин",
+    );
+    fireEvent.click(good);
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "Сохранено ответов: 1. Ваш прогресс уже на устройстве.",
+        ),
+      ).toBeInTheDocument(),
+    );
+    const state = await readSnapshot();
+    expect(
+      +new Date(state.schedules[0].fsrs.due) -
+        +new Date(state.reviews[0].reviewedAt),
+    ).toBe(30 * 60000);
+  });
   it("quick edit preserves the active turn and schedule", async () => {
     const { deck, card, snapshot } = await setup();
     render(<Study deck={deck} snapshot={snapshot} />);

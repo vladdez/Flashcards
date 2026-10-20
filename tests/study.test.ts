@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyCard, Rating, fsrs } from "ts-fsrs";
+import { createEmptyCard, Rating, State, fsrs } from "ts-fsrs";
 import {
   dayKey,
   deckProgress,
   preview,
   rebuildSchedules,
+  deserialize,
   serialize,
   streak,
   studyQueue,
@@ -33,22 +34,84 @@ describe("FSRS and independent directions", () => {
     settings: defaultSettings,
     conflicts: [],
   });
-  it("uses actual ts-fsrs previews and learning steps", () => {
+  it("sets the first Good to 30 minutes while keeping the other FSRS ratings", () => {
     const actual = preview(undefined, 0.9, date),
       expected = fsrs({ request_retention: 0.9, enable_fuzz: false }).repeat(
         createEmptyCard(date),
         date,
       );
-    for (const n of [
+    for (const n of [Rating.Again, Rating.Hard, Rating.Easy] as const)
+      expect(actual[n]).toEqual(expected[n]);
+    expect(+actual[Rating.Good].card.due - +date).toBe(30 * 60000);
+    expect(actual[Rating.Good].card.state).toBe(State.Learning);
+    expect(actual[Rating.Good].card.learning_steps).toBe(1);
+  });
+  it("recalculates past answers using the 30-minute step", () => {
+    const oldGood = review(card.id, deck.id, date.toISOString());
+    const oldSchedule = rebuildSchedules([oldGood])[0];
+    expect(oldSchedule.fsrs).toEqual(
+      serialize(preview(undefined, 0.9, date)[Rating.Good].card),
+    );
+    expect(+new Date(oldSchedule.fsrs.due) - +date).toBe(30 * 60000);
+
+    const oldAgain = { ...oldGood, rating: Rating.Again };
+    const before = rebuildSchedules([oldAgain])[0];
+    const now = new Date(before.fsrs.due);
+    const currentGood = review(card.id, deck.id, now.toISOString());
+    const after = rebuildSchedules([oldAgain, currentGood]);
+    expect(after[0].fsrs).toEqual(serialize(preview(before, 0.9, now)[3].card));
+    expect(+new Date(after[0].fsrs.due) - +now).toBe(30 * 60000);
+    expect(rebuildSchedules([currentGood, oldAgain])).toEqual(after);
+  });
+  it("graduates after the 30-minute step and keeps forgotten reviews at 10 minutes", () => {
+    const first = review(card.id, deck.id, date.toISOString());
+    const learning = rebuildSchedules([first])[0];
+    const now = new Date(learning.fsrs.due);
+    const actual = preview(learning, 0.9, now);
+    const expected = fsrs({
+      request_retention: 0.9,
+      enable_fuzz: false,
+    }).repeat(deserialize(learning.fsrs), now);
+    for (const rating of [
       Rating.Again,
       Rating.Hard,
       Rating.Good,
       Rating.Easy,
     ] as const)
-      expect(actual[n]).toEqual(expected[n]);
-    expect(actual[1].card.due.getTime()).toBeLessThan(
-      actual[4].card.due.getTime(),
-    );
+      expect(actual[rating]).toEqual(expected[rating]);
+    expect(actual[Rating.Good].card.state).toBe(State.Review);
+    expect(actual[Rating.Good].card.scheduled_days).toBeGreaterThan(0);
+
+    const second = review(card.id, deck.id, now.toISOString());
+    const learned = rebuildSchedules([first, second])[0];
+    const due = new Date(learned.fsrs.due);
+    const failed = preview(learned, 0.9, due)[Rating.Again].card;
+    expect(failed.state).toBe(State.Relearning);
+    expect(+failed.due - +due).toBe(10 * 60000);
+    const relearning = { ...learned, fsrs: serialize(failed) };
+    const next = preview(relearning, 0.9, failed.due);
+    const defaultNext = fsrs({
+      request_retention: 0.9,
+      enable_fuzz: false,
+    }).repeat(failed, failed.due);
+    for (const rating of [
+      Rating.Again,
+      Rating.Hard,
+      Rating.Good,
+      Rating.Easy,
+    ] as const)
+      expect(next[rating]).toEqual(defaultNext[rating]);
+  });
+  it("returns a Good card to the queue only after 30 minutes", () => {
+    const s = snapshot();
+    s.reviews = [review(card.id, deck.id, date.toISOString())];
+    s.schedules = rebuildSchedules(s.reviews);
+    expect(
+      studyQueue(deck, s, new Date(+date + 30 * 60000 - 1), "due"),
+    ).toEqual([]);
+    expect(studyQueue(deck, s, new Date(+date + 30 * 60000), "due")).toEqual([
+      { cardId: card.id, direction: "forward", isNew: false },
+    ]);
   });
   it("replays all events deterministically and keeps directions independent", () => {
     const events = [
@@ -65,7 +128,7 @@ describe("FSRS and independent directions", () => {
     );
     expect(rebuildSchedules([...events].reverse())).toEqual(schedules);
   });
-  it("requires 21 days in BOTH active directions, including exactly 21", () => {
+  it("requires 3 days in BOTH active directions, including exactly 3", () => {
     const schedule = (
       direction: "forward" | "reverse",
       days: number,
@@ -79,21 +142,21 @@ describe("FSRS and independent directions", () => {
       deckProgress(
         deck,
         [card],
-        [schedule("forward", 21), schedule("reverse", 20)],
+        [schedule("forward", 3), schedule("reverse", 2)],
       ).learned,
     ).toBe(0);
     expect(
       deckProgress(
         deck,
         [card],
-        [schedule("forward", 21), schedule("reverse", 21)],
+        [schedule("forward", 3), schedule("reverse", 3)],
       ).learned,
     ).toBe(1);
     expect(
       deckProgress(
         { ...deck, studyMode: "forward" },
         [card],
-        [schedule("forward", 21)],
+        [schedule("forward", 3)],
       ).learned,
     ).toBe(1);
   });

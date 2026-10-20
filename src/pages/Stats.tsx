@@ -1,6 +1,12 @@
 import { Flame, Trophy, CheckCheck, Layers } from "lucide-react";
 import type { Snapshot } from "../core/model";
-import { addDay, dayKey, deckProgress, streak } from "../core/study";
+import {
+  addDay,
+  dayKey,
+  deckProgress,
+  LEARNED_INTERVAL_DAYS,
+  streak,
+} from "../core/study";
 export function Stats({ snapshot }: { snapshot: Snapshot }) {
   const stats = streak(snapshot.reviews, snapshot.settings.timeZone),
     answers = snapshot.reviews.filter((r) => r.kind === "answer"),
@@ -84,9 +90,10 @@ export function Stats({ snapshot }: { snapshot: Snapshot }) {
           <p className="muted">Добавьте первую колоду, чтобы начать.</p>
         )}
         <p className="hint">
-          Слово выучено, когда интервал составляет не меньше 21 дня. В режиме «В
-          обе стороны» условие должно выполняться в каждом направлении. При
-          уменьшении интервала слово снова считается находящимся в процессе.
+          Слово выучено, когда интервал составляет не меньше{" "}
+          {LEARNED_INTERVAL_DAYS} дней. В режиме «В обе стороны» условие должно
+          выполняться в каждом направлении. При уменьшении интервала слово снова
+          считается находящимся в процессе.
         </p>
       </section>
     </>
