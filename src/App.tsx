@@ -109,15 +109,6 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="local-badge">
-            <span className="status-dot" />
-            <strong>Сначала — на устройстве</strong>
-            <p>
-              Ваши знания всегда с вами,
-              <br />
-              даже без интернета.
-            </p>
-          </div>
           <button className="sync-link" onClick={() => navigate("/settings")}>
             {online ? <Cloud size={18} /> : <WifiOff size={18} />}
             <span>{online ? sync.status : "Офлайн / ожидает"}</span>
