@@ -25,6 +25,7 @@ describe("activity calendar", () => {
     expect(
       screen.getByRole("button", { name: "28 февраля 2024 г.: слов: 0" }),
     ).toHaveClass("intensity-0");
+    expect(document.querySelector(".activity-detail")).toBeInTheDocument();
     fireEvent.click(day);
     expect(screen.getByText("Слов: 1")).toBeVisible();
     expect(day).toHaveAttribute("aria-pressed", "true");

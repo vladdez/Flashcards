@@ -225,12 +225,10 @@ export function ActivityCalendar({
             {label}
           </span>
         ))}
-      </div>
-      {selected && (
         <p className="activity-detail" aria-live="polite">
-          Слов: {countFor(selected)}
+          {selected ? `Слов: ${countFor(selected)}` : "\u00a0"}
         </p>
-      )}
+      </div>
       <div className="activity-summary" aria-live="polite">
         {footer ?? (
           <span title="Количество дней хотя бы с одним ответом за выбранный период. Пропуски допустимы.">

@@ -105,14 +105,6 @@ export function Home({ snapshot }: { snapshot: Snapshot }) {
   }
   return (
     <>
-      <div className="page-title">
-        <span className="date-label">
-          {new Intl.DateTimeFormat("ru", {
-            day: "numeric",
-            month: "long",
-          }).format(new Date())}
-        </span>
-      </div>
       <div className="overview-grid">
         <section className="continue-section">
           {last ? (
