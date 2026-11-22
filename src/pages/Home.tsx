@@ -6,16 +6,16 @@ import {
   ChevronDown,
   Pencil,
   Trash2,
-  Flame,
   Trophy,
   ArrowRight,
   Upload,
 } from "lucide-react";
 import type { Folder, Snapshot } from "../core/model";
 import { newDeck, nowISO } from "../core/model";
-import { addDay, deckProgress, streak } from "../core/study";
+import { streak } from "../core/study";
 import { applyEdits } from "../core/db";
 import { Confirm, DeckTile, Empty, navigate } from "../components/Common";
+import { ActivityCalendar } from "../components/ActivityCalendar";
 import { DeckEditor, FolderEditor } from "../components/Editors";
 
 export function Home({ snapshot }: { snapshot: Snapshot }) {
@@ -29,10 +29,7 @@ export function Home({ snapshot }: { snapshot: Snapshot }) {
     .filter((d) => d.lastStudiedAt)
     .sort((a, b) => b.lastStudiedAt!.localeCompare(a.lastStudiedAt!))[0];
   const stats = streak(snapshot.reviews, snapshot.settings.timeZone);
-  const due = decks.reduce(
-    (n, d) => n + deckProgress(d, snapshot.cards, snapshot.schedules).due,
-    0,
-  );
+  const totalDays = [...stats.days].filter((day) => day <= stats.today).length;
   const filtered = decks.filter(
     (d) =>
       d.id !== last?.id &&
@@ -109,11 +106,6 @@ export function Home({ snapshot }: { snapshot: Snapshot }) {
   return (
     <>
       <div className="page-title">
-        <div>
-          <div className="eyebrow">МАЛЕНЬКИЕ ШАГИ. БОЛЬШИЕ ЗНАНИЯ.</div>
-          <h1>Учить. Повторять. Помнить.</h1>
-          <p className="muted">Пусть новое остаётся с вами надолго.</p>
-        </div>
         <span className="date-label">
           {new Intl.DateTimeFormat("ru", {
             day: "numeric",
@@ -134,8 +126,7 @@ export function Home({ snapshot }: { snapshot: Snapshot }) {
                   <br />с одного слова.
                 </h2>
                 <p>
-                  Добавьте свои карточки — мы подберём
-                  <br className="desktop-only" /> время для каждого повторения.
+                  Добавьте свои карточки и учись на здоровье!
                 </p>
                 <button
                   className="button light"
@@ -157,38 +148,30 @@ export function Home({ snapshot }: { snapshot: Snapshot }) {
         </section>
         <aside className="streak-card">
           <div className="streak-top">
-            <span className="flame-icon">
-              <Flame size={25} />
-            </span>
+            <Trophy size={18} aria-hidden="true" />
             <span>Серия занятий</span>
-            <Trophy size={18} />
+            <span
+              className="streak-value"
+              title="Текущая серия дней с занятиями без пропусков."
+            >
+              <strong>{stats.current}</strong> <span>дней подряд</span>
+            </span>
           </div>
-          <div className="streak-value">
-            {stats.current}
-            <span>дней подряд</span>
-          </div>
-          <div className="week">
-            {Array.from({ length: 7 }, (_, i) =>
-              addDay(stats.today, i - 6),
-            ).map((day) => (
-              <div key={day}>
-                <span>
-                  {new Intl.DateTimeFormat("ru", {
-                    weekday: "short",
-                    timeZone: "UTC",
-                  }).format(new Date(day + "T12:00:00Z"))}
+          <ActivityCalendar
+            reviews={snapshot.reviews}
+            timeZone={snapshot.settings.timeZone}
+            today={stats.today}
+            footer={
+              <>
+                <span title="Самая длинная серия дней с занятиями без пропусков за всё время.">
+                  Рекордная серия: {stats.best} дн.
                 </span>
-                <span
-                  className={`day-dot ${stats.days.has(day) ? "done" : ""} ${day === stats.today ? "today" : ""}`}
-                >
-                  {stats.days.has(day) ? "✓" : "·"}
+                <span title="Общее число дней хотя бы с одним ответом за всё время, включая дни с перерывами.">
+                  Всего занимался: {totalDays} дн.
                 </span>
-              </div>
-            ))}
-          </div>
-          <p className="muted">
-            Рекорд: {stats.best} дн. · Сегодня к повторению: {due}
-          </p>
+              </>
+            }
+          />
         </aside>
       </div>
       <div className="section-title">
@@ -251,7 +234,7 @@ export function Home({ snapshot }: { snapshot: Snapshot }) {
       {!decks.length && !folders.length && (
         <Empty
           title="Здесь будет ваша коллекция"
-          text="Создайте колоду или перенесите слова из таблицы. Примеры предложений тоже сохранятся."
+          text="Создайте колоду или перенесите слова из таблицы."
         >
           <button
             className="button secondary"
@@ -262,15 +245,6 @@ export function Home({ snapshot }: { snapshot: Snapshot }) {
           </button>
         </Empty>
       )}
-      <div className="tip">
-        <span>✦</span>
-        <p>
-          <strong>Немного каждый день — надолго в памяти.</strong>
-          <br />
-          Карточки возвращаются тогда, когда их пора повторить. Выученные слова
-          тоже остаются в расписании.
-        </p>
-      </div>
       {deckModal && (
         <DeckEditor
           initial={newDeck("")}

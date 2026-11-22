@@ -1,12 +1,7 @@
 import { Flame, Trophy, CheckCheck, Layers } from "lucide-react";
 import type { Snapshot } from "../core/model";
-import {
-  addDay,
-  dayKey,
-  deckProgress,
-  LEARNED_INTERVAL_DAYS,
-  streak,
-} from "../core/study";
+import { deckProgress, LEARNED_INTERVAL_DAYS, streak } from "../core/study";
+import { ActivityCalendar } from "../components/ActivityCalendar";
 export function Stats({ snapshot }: { snapshot: Snapshot }) {
   const stats = streak(snapshot.reviews, snapshot.settings.timeZone),
     answers = snapshot.reviews.filter((r) => r.kind === "answer"),
@@ -40,28 +35,12 @@ export function Stats({ snapshot }: { snapshot: Snapshot }) {
         ))}
       </div>
       <section className="panel">
-        <h2>Последние семь дней</h2>
-        <div className="activity-week">
-          {Array.from({ length: 7 }, (_, i) => addDay(stats.today, i - 6)).map(
-            (day) => {
-              const count = answers.filter(
-                (r) => dayKey(r.reviewedAt, snapshot.settings.timeZone) === day,
-              ).length;
-              return (
-                <div key={day} className={count ? "active" : ""}>
-                  <strong>{count}</strong>
-                  <span>
-                    {new Intl.DateTimeFormat("ru", {
-                      weekday: "short",
-                      day: "numeric",
-                      timeZone: "UTC",
-                    }).format(new Date(day + "T12:00:00Z"))}
-                  </span>
-                </div>
-              );
-            },
-          )}
-        </div>
+        <h2>Занятия</h2>
+        <ActivityCalendar
+          reviews={snapshot.reviews}
+          timeZone={snapshot.settings.timeZone}
+          today={stats.today}
+        />
         <p className="hint">
           День засчитывается только после сохранённого ответа. Временная зона:{" "}
           {snapshot.settings.timeZone}.

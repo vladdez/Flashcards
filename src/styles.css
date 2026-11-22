@@ -433,35 +433,30 @@ main {
 .streak-top {
   display: flex;
   align-items: center;
-  gap: 11px;
-  font-size: 13px;
+  gap: 6px;
+  margin-bottom: 14px;
+  white-space: nowrap;
+  font-size: 12px;
   font-weight: 600;
 }
 .streak-top > svg {
-  margin-left: auto;
+  flex-shrink: 0;
   color: #ad9671;
 }
-.flame-icon {
-  width: 42px;
-  height: 42px;
-  background: #fff2df;
-  color: #c3863d;
-  display: grid;
-  place-items: center;
-  border-radius: 11px;
-}
 .streak-value {
-  font-size: 50px;
-  font-weight: 550;
-  letter-spacing: -2px;
-  margin: 11px 0 16px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-left: auto;
+}
+.streak-value > strong {
+  font-size: 16px;
+  font-weight: 600;
 }
 .streak-value > span {
-  font-size: 12px;
-  letter-spacing: 0;
+  font-size: 11px;
   font-weight: 400;
   color: var(--muted);
-  margin-left: 12px;
 }
 .week {
   display: flex;
@@ -495,11 +490,216 @@ main {
   outline: 2px solid #9bb797;
   outline-offset: 2px;
 }
-.streak-card > p {
+.activity-calendar {
+  container-type: inline-size;
+  min-width: 0;
+  grid-column: 1 / -1;
+  --activity-low: #c9dce9;
+  --activity-medium: #acccb4;
+  --activity-high: #d8af9c;
+}
+.activity-periods {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--bg);
+}
+.activity-periods button {
+  flex: 1;
+  min-height: 36px;
+  padding: 6px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.activity-periods button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.activity-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 11px;
+  margin: 4px 0;
+}
+.activity-navigation > span {
+  text-align: center;
+}
+.activity-navigation .icon-button {
+  width: 36px;
+  height: 36px;
+}
+.activity-calendar button:disabled {
+  cursor: default;
+}
+.activity-return {
+  display: block;
+  margin: 0 auto 10px;
+  min-height: 32px;
+  color: var(--muted);
+  font-size: 11px;
+  text-decoration: underline;
+}
+.activity-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+}
+.activity-day {
+  display: grid;
+  place-content: center;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 0;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--text);
+}
+.activity-day small {
+  font-size: 9px;
+  margin-bottom: 4px;
+}
+.activity-day.is-today {
+  outline: 1px solid var(--muted);
+  outline-offset: 1px;
+}
+.activity-day[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 2px var(--green);
+}
+.intensity-0 {
+  background: var(--bg);
+}
+.intensity-1 {
+  background: var(--activity-low);
+}
+.intensity-2 {
+  background: var(--activity-medium);
+}
+.intensity-3 {
+  background: var(--activity-high);
+}
+.activity-day.is-future {
+  opacity: 0.35;
+}
+.activity-weekday {
+  text-align: center;
+  color: var(--muted);
   font-size: 10px;
+  padding: 4px 0;
+}
+.activity-year {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 10px;
+}
+.activity-mini-month {
+  padding: 0;
+  min-width: 0;
+  text-align: left;
+  align-self: start;
+}
+.activity-mini-month > span:first-child {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.activity-mini-days {
+  gap: 2px;
+  grid-template-columns: repeat(7, minmax(0, 7px));
+  grid-template-rows: repeat(6, 7px);
+}
+.activity-mini-days .activity-day {
+  min-height: 0;
+  padding: 0;
+  border-radius: 2px;
+}
+.activity-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 14px;
+  font-size: 9px;
+  color: var(--muted);
+}
+.activity-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.activity-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  border: 1px solid var(--line);
+}
+.activity-detail {
+  min-height: 16px;
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.activity-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.streak-card .activity-summary {
   border-top: 1px solid var(--line);
   padding-top: 13px;
-  margin: 17px 0 0;
+  margin-top: 17px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.activity-summary > span + span::before {
+  content: "·";
+  margin-right: 6px;
+}
+@container (max-width: 260px) {
+  .streak-card .activity-summary {
+    font-size: 9px;
+    gap: 4px;
+  }
+  .activity-summary > span + span::before {
+    margin-right: 4px;
+  }
+}
+.panel > .activity-calendar {
+  max-width: 600px;
+}
+.panel .activity-year {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@container (min-width: 280px) {
+  .activity-year {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+html[data-theme="dark"] .activity-calendar {
+  --activity-low: #344b60;
+  --activity-medium: #3c5c49;
+  --activity-high: #745344;
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]):not([data-theme="dark"]) .activity-calendar {
+    --activity-low: #344b60;
+    --activity-medium: #3c5c49;
+    --activity-high: #745344;
+  }
+}
+@media (max-width: 600px) {
+  .panel .activity-year {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 .section-title {
   display: flex;
@@ -1550,9 +1750,6 @@ td select {
 :root[data-theme="dark"] .tip strong {
   color: #b6c2a6;
 }
-:root[data-theme="dark"] .flame-icon {
-  background: #473b24;
-}
 :root[data-theme="dark"] .again,
 :root[data-theme="dark"] .error {
   background: #502e33;
@@ -1716,20 +1913,12 @@ td select {
     gap: 0 25px;
   }
   .streak-top {
-    grid-column: 1;
-  }
-  .streak-value {
-    grid-row: 2;
-    grid-column: 1;
-    margin: 5px 0;
+    grid-column: 1 / -1;
   }
   .week {
     grid-column: 2;
     grid-row: 1/3;
     align-self: center;
-  }
-  .streak-card > p {
-    grid-column: 1/3;
   }
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -1823,25 +2012,6 @@ td select {
   }
   .streak-card {
     padding: 20px;
-  }
-  .streak-top {
-    font-size: 12px;
-    gap: 8px;
-  }
-  .streak-top > svg {
-    display: none;
-  }
-  .flame-icon {
-    width: 34px;
-    height: 34px;
-  }
-  .streak-value {
-    font-size: 40px;
-    margin-top: 10px;
-  }
-  .streak-value span {
-    font-size: 10px;
-    margin-left: 8px;
   }
   .week {
     gap: 6px;

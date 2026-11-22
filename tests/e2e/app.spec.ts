@@ -7,9 +7,6 @@ test("CSV/XLSX → study → quick edit → reload → backup → offline PWA", 
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("./");
-  await expect(
-    page.getByRole("heading", { name: "Учить. Повторять. Помнить." }),
-  ).toBeVisible();
   await page.getByRole("button", { name: "Импортировать слова" }).click();
   await page
     .getByLabel("Файл для импорта")
