@@ -1,0 +1,50 @@
+name: Keep Supabase awake
+# Free Supabase projects pause after about a week without activity, which
+# silently stops sync between devices. This sends a small database request
+# every 3 days. If the project is already paused or unreachable, the run fails
+# and GitHub emails you.
+on:
+  schedule:
+    - cron: "17 6 */3 * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write # only to re-enable this workflow, see the last step
+concurrency:
+  group: supabase-keepalive
+  cancel-in-progress: true
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Query the Supabase database
+        env:
+          SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::error::Set the VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY repository variables."
+            exit 1
+          fi
+          # Anonymous callers have no table grants, so PostgREST runs this as
+          # the anon role inside Postgres and gets "permission denied" (401/403).
+          # That still runs a real database transaction, which counts as
+          # activity, and no data is exposed.
+          url="${SUPABASE_URL%/}/rest/v1/flashcards_decks?select=id&limit=1"
+          code=$(curl -sS -o body.txt -w '%{http_code}' --retry 3 --retry-all-errors --max-time 30 \
+            -H "apikey: $SUPABASE_KEY" "$url") || code=000
+          echo "HTTP $code"
+          head -c 300 body.txt 2>/dev/null; echo
+          case "$code" in
+            200|401|403) echo "Supabase is awake." ;;
+            *) echo "::error::Supabase did not respond normally (HTTP $code). Check whether the project is paused in the Supabase Dashboard."; exit 1 ;;
+          esac
+      # GitHub turns off scheduled workflows in public repositories after 60
+      # days with no commits. Re-enabling the workflow resets that timer, so this
+      # job keeps running when you don't commit for a while.
+      - name: Keep this schedule enabled
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/supabase-keepalive.yml/enable"
