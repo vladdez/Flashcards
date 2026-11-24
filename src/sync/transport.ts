@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { operationSchema, type Operation } from "../core/model";
 import { getSupabase } from "./auth";
-import { cloudConfig } from "./config";
+import { cloudConfig, cloudUnavailableMessage } from "./config";
 
 export interface CloudTransport {
   head(): Promise<number>;
@@ -16,7 +16,23 @@ const revision = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const pageSchema = z
   .array(z.object({ revision, operation: operationSchema }))
   .max(500);
-export function cloudError(error: { code?: string; message?: string }): Error {
+export function cloudError(
+  error: { code?: string; message?: string },
+  status?: number,
+): Error {
+  // Status 0 is a failed fetch; our own thrown errors (e.g. account changed)
+  // also arrive with status 0, so only browser/Auth network errors match.
+  const networkFailure =
+    status === 0 &&
+    /^(TypeError|AuthRetryableFetchError)\b/.test(error.message || "");
+  if (
+    status === 540 ||
+    /project.*paused|paused.*project/i.test(error.message || "") ||
+    ((networkFailure ||
+      (status !== undefined && status >= 500 && !error.code)) &&
+      (typeof navigator === "undefined" || navigator.onLine))
+  )
+    return new Error(cloudUnavailableMessage);
   if (["PGRST202", "42P01", "42883"].includes(error.code || ""))
     return new Error(
       "Схема синхронизации ещё не установлена. Примените SQL-миграцию из supabase/migrations.",
@@ -49,23 +65,23 @@ export class SupabaseTransport implements CloudTransport {
     });
   }
   async head() {
-    const { data, error } = await this.client.rpc("flashcards_head");
-    if (error) throw cloudError(error);
+    const { data, error, status } = await this.client.rpc("flashcards_head");
+    if (error) throw cloudError(error, status);
     return revision.parse(data);
   }
   async pull(after: number, until: number) {
-    const { data, error } = await this.client.rpc("flashcards_pull", {
+    const { data, error, status } = await this.client.rpc("flashcards_pull", {
       after_revision: after,
       until_revision: until,
     });
-    if (error) throw cloudError(error);
+    if (error) throw cloudError(error, status);
     return pageSchema.parse(data);
   }
   async push(operations: Operation[]) {
-    const { data, error } = await this.client.rpc("flashcards_push", {
+    const { data, error, status } = await this.client.rpc("flashcards_push", {
       incoming: operations,
     });
-    if (error) throw cloudError(error);
+    if (error) throw cloudError(error, status);
     return z.array(z.uuid()).parse(data);
   }
 }

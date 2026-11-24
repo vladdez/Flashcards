@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-vi.mock("../src/sync/config", () => ({
+vi.mock("../src/sync/config", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/sync/config")>()),
   cloudConfig: {
     url: "https://cloud.example.test",
     key: "sb_publishable_test",
@@ -88,5 +89,23 @@ describe("Supabase SDK transport with mocked HTTP", () => {
       ),
     );
     await expect(transport.head()).rejects.toThrow(/Сессия истекла/);
+  });
+  it("explains a paused Supabase project instead of a generic error", async () => {
+    const { transport, fetcher } = setup();
+    fetcher.mockResolvedValueOnce(
+      new Response("Project paused", { status: 540 }),
+    );
+    await expect(transport.head()).rejects.toThrow(/приостановлен/);
+    // Browsers see a paused project's CORS-less response as a network error.
+    fetcher.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await expect(transport.push([])).rejects.toThrow(/Restore project/);
+  });
+  it("keeps the account-changed error distinct from an unreachable cloud", async () => {
+    const { transport, auth } = setup();
+    auth.getSession.mockResolvedValue({
+      data: { session: { user: { id: uid() }, access_token: "other" } },
+      error: null,
+    });
+    await expect(transport.head()).rejects.toThrow(/Аккаунт изменился/);
   });
 });

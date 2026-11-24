@@ -34,3 +34,8 @@ export function authRedirectUrl(
 ) {
   return new URL(base, origin).href;
 }
+
+// Free Supabase projects pause after inactivity. A paused project answers with
+// HTTP 540 or without CORS headers, which browsers report as a network error.
+export const cloudUnavailableMessage =
+  "Supabase не отвечает. Если интернет есть, вероятно, бесплатный проект Supabase приостановлен из-за неактивности: откройте Supabase Dashboard и нажмите «Restore project». Изменения сохранены на устройстве и отправятся после восстановления.";

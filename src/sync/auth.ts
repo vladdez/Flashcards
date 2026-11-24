@@ -1,5 +1,9 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { authRedirectUrl, cloudConfig } from "./config";
+import {
+  authRedirectUrl,
+  cloudConfig,
+  cloudUnavailableMessage,
+} from "./config";
 
 let instance: SupabaseClient | undefined;
 export function getSupabase() {
@@ -34,8 +38,15 @@ export function authError(error: unknown): string {
     return "Отправка на этот адрес пока не разрешена. Владельцу проекта нужно настроить SMTP в Supabase.";
   if (code === "signup_disabled")
     return "Регистрация отключена в настройках проекта Supabase.";
-  if (error instanceof TypeError || !navigator.onLine)
+  if (!navigator.onLine)
     return "Нет связи с Supabase. Локальные данные сохранены; повторите вход при появлении сети.";
+  const status = (error as { status?: number })?.status;
+  if (
+    error instanceof TypeError ||
+    (error as { name?: string })?.name === "AuthRetryableFetchError" ||
+    status === 540
+  )
+    return cloudUnavailableMessage;
   return error instanceof Error
     ? error.message
     : "Не удалось выполнить вход. Проверьте сеть и повторите попытку.";
